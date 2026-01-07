@@ -118,6 +118,14 @@ function updatePlayerInfo() {
   displayedCredits = gameState.credits;
   document.getElementById('player-credits').textContent = displayedCredits;
   document.getElementById('player-income').textContent = gameState.income;
+
+  // Update empire name display
+  const currentPlayer = gameState.players.find(p => p.id === playerId);
+  if (currentPlayer) {
+    const empireDisplay = document.getElementById('empire-name-display');
+    empireDisplay.textContent = currentPlayer.empire_name || `Player ${currentPlayer.player_number}`;
+    empireDisplay.style.color = currentPlayer.empire_color || '#4a9eff';
+  }
 }
 
 function updateEventLog() {

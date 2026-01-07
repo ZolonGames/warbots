@@ -420,6 +420,20 @@ a:hover {
   font-family: monospace;
 }
 
+/* Empire panel in right sidebar */
+.empire-panel {
+  text-align: center;
+  padding: 12px;
+  background: var(--bg-light);
+  border-radius: 6px;
+}
+
+.empire-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
 /* Resources panel in right sidebar */
 .resources-panel {
   background: var(--bg-light);
