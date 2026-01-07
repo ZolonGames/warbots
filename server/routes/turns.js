@@ -185,6 +185,15 @@ function validateOrders(orders, player, game) {
         return { valid: false, error: `Invalid building type: ${buildingType}` };
       }
 
+      // Check if building already exists on this planet
+      const existingBuilding = db.prepare(`
+        SELECT * FROM buildings WHERE planet_id = ? AND type = ?
+      `).get(build.planetId, buildingType);
+
+      if (existingBuilding) {
+        return { valid: false, error: `${buildingType} already exists on this planet` };
+      }
+
       totalCost += COSTS[buildingType];
     } else {
       return { valid: false, error: `Invalid build type: ${build.type}` };

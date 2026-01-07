@@ -191,18 +191,30 @@ function updateSelectionPanel(selection) {
 
 function updateBuildButtons(planet) {
   const hasFactory = planet.buildings && planet.buildings.some(b => b.type === 'factory');
+  const existingBuildings = new Set((planet.buildings || []).map(b => b.type));
 
   document.querySelectorAll('.build-btn').forEach(btn => {
     const type = btn.dataset.type;
     const buildType = btn.dataset.build;
 
-    // Mechs require a factory
-    if (type === 'mech' && !hasFactory) {
-      btn.disabled = true;
-      btn.title = 'Requires a Factory';
-    } else {
-      btn.disabled = false;
-      btn.title = '';
+    if (type === 'building') {
+      // Check if building already exists on this planet
+      if (existingBuildings.has(buildType)) {
+        btn.disabled = true;
+        btn.title = 'Already built on this planet';
+      } else {
+        btn.disabled = false;
+        btn.title = '';
+      }
+    } else if (type === 'mech') {
+      // Mechs require a factory
+      if (!hasFactory) {
+        btn.disabled = true;
+        btn.title = 'Requires a Factory';
+      } else {
+        btn.disabled = false;
+        btn.title = '';
+      }
     }
   });
 }
