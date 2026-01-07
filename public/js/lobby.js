@@ -1,11 +1,10 @@
 // Lobby page functionality
 
-// All 20 empire colors (sorted by hex value)
+// All 15 empire colors
 const ALL_COLORS = [
-  '#1E90FF', '#2E8B57', '#4169E1', '#4682B4', '#556B2F',
-  '#6A5ACD', '#708090', '#8B0000', '#8B4513', '#9400D3',
-  '#B22222', '#CD853F', '#D2691E', '#DAA520', '#DC143C',
-  '#FF4500', '#FF6347', '#FF8C00', '#FFD700', '#FF69B4'
+  '#FF0000', '#0000FF', '#008000', '#FFFF00', '#FFFFFF',
+  '#808080', '#800080', '#FFA500', '#FFC0CB', '#00FFFF',
+  '#6DFD4C', '#FF0181', '#900DFF', '#C00000', '#0000C0'
 ];
 
 // State for empire modal

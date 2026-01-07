@@ -5,28 +5,23 @@ const { generateMap } = require('../services/mapGenerator');
 
 const router = express.Router();
 
-// 20 preset empire colors sorted by hex value
+// 15 preset empire colors
 const EMPIRE_COLORS = [
-  '#1E90FF', // Dodger Blue
-  '#2E8B57', // Sea Green
-  '#4169E1', // Royal Blue
-  '#4682B4', // Steel Blue
-  '#556B2F', // Dark Olive Green
-  '#6A5ACD', // Slate Blue
-  '#708090', // Slate Gray
-  '#8B0000', // Dark Red
-  '#8B4513', // Saddle Brown
-  '#9400D3', // Dark Violet
-  '#B22222', // Firebrick
-  '#CD853F', // Peru
-  '#D2691E', // Chocolate
-  '#DAA520', // Goldenrod
-  '#DC143C', // Crimson
-  '#FF4500', // Orange Red
-  '#FF6347', // Tomato
-  '#FF8C00', // Dark Orange
-  '#FFD700', // Gold
-  '#FF69B4'  // Hot Pink
+  '#FF0000', // Red
+  '#0000FF', // Blue
+  '#008000', // Green
+  '#FFFF00', // Yellow
+  '#FFFFFF', // White
+  '#808080', // Gray
+  '#800080', // Purple
+  '#FFA500', // Orange
+  '#FFC0CB', // Pink
+  '#00FFFF', // Cyan
+  '#6DFD4C', // Lime
+  '#FF0181', // Magenta
+  '#900DFF', // Violet
+  '#C00000', // Dark Red
+  '#0000C0'  // Dark Blue
 ];
 
 // All routes require authentication
