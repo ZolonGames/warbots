@@ -57,7 +57,19 @@ router.get('/mine', (req, res) => {
         g.*,
         u.display_name as host_name,
         (SELECT COUNT(*) FROM game_players WHERE game_id = g.id) as player_count,
-        (g.host_id = ?) as is_host
+        (g.host_id = ?) as is_host,
+        gp.empire_name,
+        gp.empire_color,
+        gp.credits,
+        gp.id as player_id,
+        (SELECT COUNT(*) FROM planets WHERE game_id = g.id AND owner_id = gp.id) as planet_count,
+        (SELECT COUNT(*) FROM mechs WHERE game_id = g.id AND owner_id = gp.id) as mech_count,
+        (
+          SELECT COALESCE(SUM(p.base_income + COALESCE(
+            (SELECT COUNT(*) FROM buildings WHERE planet_id = p.id AND type = 'mining'), 0
+          )), 0)
+          FROM planets p WHERE p.game_id = g.id AND p.owner_id = gp.id
+        ) as income
       FROM games g
       JOIN users u ON g.host_id = u.id
       JOIN game_players gp ON gp.game_id = g.id

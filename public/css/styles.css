@@ -349,6 +349,33 @@ a:hover {
   color: var(--accent-green);
 }
 
+.game-card-info .empire-info {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.game-card-info .game-stats {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.game-card-info .stat-planets {
+  color: var(--accent-cyan);
+}
+
+.game-card-info .stat-mechs {
+  color: var(--accent-blue);
+}
+
+.game-card-info .stat-credits {
+  color: var(--accent-yellow);
+}
+
+.game-card-info .stat-income {
+  color: var(--accent-green);
+}
+
 .game-card-actions {
   display: flex;
   gap: 8px;

@@ -79,11 +79,22 @@ async function loadMyGames() {
       <div class="game-card">
         <div class="game-card-info">
           <h4>${escapeHtml(game.name)}</h4>
+          <p class="empire-info" style="color: ${game.empire_color || '#888'}">
+            ${escapeHtml(game.empire_name || 'Unknown Empire')}
+          </p>
           <p>
             Turn ${game.current_turn} |
             ${game.status === 'waiting' ? 'Waiting for players' : 'In progress'} |
             <span class="players">${game.player_count}/${game.max_players} players</span>
           </p>
+          ${game.status === 'active' ? `
+            <p class="game-stats">
+              <span class="stat-planets">${game.planet_count} planets</span> |
+              <span class="stat-mechs">${game.mech_count} mechs</span> |
+              <span class="stat-credits">${game.credits} credits</span> |
+              <span class="stat-income">+${game.income}/turn</span>
+            </p>
+          ` : ''}
         </div>
         <div class="game-card-actions">
           ${game.status === 'waiting' && game.is_host ?
