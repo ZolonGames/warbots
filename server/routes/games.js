@@ -5,6 +5,30 @@ const { generateMap } = require('../services/mapGenerator');
 
 const router = express.Router();
 
+// 20 preset empire colors sorted by hex value
+const EMPIRE_COLORS = [
+  '#1E90FF', // Dodger Blue
+  '#2E8B57', // Sea Green
+  '#4169E1', // Royal Blue
+  '#4682B4', // Steel Blue
+  '#556B2F', // Dark Olive Green
+  '#6A5ACD', // Slate Blue
+  '#708090', // Slate Gray
+  '#8B0000', // Dark Red
+  '#8B4513', // Saddle Brown
+  '#9400D3', // Dark Violet
+  '#B22222', // Firebrick
+  '#CD853F', // Peru
+  '#D2691E', // Chocolate
+  '#DAA520', // Goldenrod
+  '#DC143C', // Crimson
+  '#FF4500', // Orange Red
+  '#FF6347', // Tomato
+  '#FF8C00', // Dark Orange
+  '#FFD700', // Gold
+  '#FF69B4'  // Hot Pink
+];
+
 // All routes require authentication
 router.use(requireAuth);
 
@@ -55,7 +79,7 @@ router.get('/mine', (req, res) => {
 
 // Create a new game
 router.post('/', (req, res) => {
-  const { name, gridSize, maxPlayers, turnTimer } = req.body;
+  const { name, gridSize, maxPlayers, turnTimer, empireName, empireColor } = req.body;
 
   // Validate input
   if (!name || name.length < 1 || name.length > 50) {
@@ -74,6 +98,16 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Turn timer must be 30 seconds to 1 week' });
   }
 
+  // Validate empire name
+  if (!empireName || empireName.trim().length < 1 || empireName.trim().length > 30) {
+    return res.status(400).json({ error: 'Empire name must be 1-30 characters' });
+  }
+
+  // Validate empire color
+  if (!empireColor || !EMPIRE_COLORS.includes(empireColor)) {
+    return res.status(400).json({ error: 'Invalid empire color' });
+  }
+
   try {
     // Create the game
     const result = db.prepare(`
@@ -83,17 +117,38 @@ router.post('/', (req, res) => {
 
     const gameId = result.lastInsertRowid;
 
-    // Add the host as player 1
+    // Add the host as player 1 with empire info
     db.prepare(`
-      INSERT INTO game_players (game_id, user_id, player_number, credits)
-      VALUES (?, ?, 1, 10)
-    `).run(gameId, req.user.id);
+      INSERT INTO game_players (game_id, user_id, player_number, credits, empire_name, empire_color)
+      VALUES (?, ?, 1, 10, ?, ?)
+    `).run(gameId, req.user.id, empireName.trim(), empireColor);
 
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.status(201).json(game);
   } catch (error) {
     console.error('Failed to create game:', error);
     res.status(500).json({ error: 'Failed to create game' });
+  }
+});
+
+// Get available colors for a game
+router.get('/:id/colors', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+
+    // Get colors already taken by players in this game
+    const takenColors = db.prepare(`
+      SELECT empire_color FROM game_players
+      WHERE game_id = ? AND empire_color IS NOT NULL
+    `).all(gameId).map(p => p.empire_color);
+
+    // Filter out taken colors
+    const availableColors = EMPIRE_COLORS.filter(c => !takenColors.includes(c));
+
+    res.json({ colors: availableColors, allColors: EMPIRE_COLORS });
+  } catch (error) {
+    console.error('Failed to get available colors:', error);
+    res.status(500).json({ error: 'Failed to get available colors' });
   }
 });
 
@@ -134,6 +189,7 @@ router.get('/:id', (req, res) => {
 // Join a game
 router.post('/:id/join', (req, res) => {
   try {
+    const { empireName, empireColor } = req.body;
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
 
     if (!game) {
@@ -142,6 +198,16 @@ router.post('/:id/join', (req, res) => {
 
     if (game.status !== 'waiting') {
       return res.status(400).json({ error: 'Game has already started' });
+    }
+
+    // Validate empire name
+    if (!empireName || empireName.trim().length < 1 || empireName.trim().length > 30) {
+      return res.status(400).json({ error: 'Empire name must be 1-30 characters' });
+    }
+
+    // Validate empire color
+    if (!empireColor || !EMPIRE_COLORS.includes(empireColor)) {
+      return res.status(400).json({ error: 'Invalid empire color' });
     }
 
     // Check if user is already in the game
@@ -153,6 +219,15 @@ router.post('/:id/join', (req, res) => {
       return res.status(400).json({ error: 'You are already in this game' });
     }
 
+    // Check if color is already taken
+    const colorTaken = db.prepare(`
+      SELECT id FROM game_players WHERE game_id = ? AND empire_color = ?
+    `).get(game.id, empireColor);
+
+    if (colorTaken) {
+      return res.status(400).json({ error: 'This color has already been taken by another player' });
+    }
+
     // Get current player count
     const playerCount = db.prepare(`
       SELECT COUNT(*) as count FROM game_players WHERE game_id = ?
@@ -162,17 +237,112 @@ router.post('/:id/join', (req, res) => {
       return res.status(400).json({ error: 'Game is full' });
     }
 
-    // Add player
+    // Add player with empire info
     const playerNumber = playerCount + 1;
     db.prepare(`
-      INSERT INTO game_players (game_id, user_id, player_number, credits)
-      VALUES (?, ?, ?, 10)
-    `).run(game.id, req.user.id, playerNumber);
+      INSERT INTO game_players (game_id, user_id, player_number, credits, empire_name, empire_color)
+      VALUES (?, ?, ?, 10, ?, ?)
+    `).run(game.id, req.user.id, playerNumber, empireName.trim(), empireColor);
 
     res.json({ success: true, playerNumber });
   } catch (error) {
     console.error('Failed to join game:', error);
     res.status(500).json({ error: 'Failed to join game' });
+  }
+});
+
+// Update empire info (for color conflict resolution)
+router.post('/:id/empire', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+    const { empireColor } = req.body;
+
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    if (game.status !== 'waiting') {
+      return res.status(400).json({ error: 'Cannot change empire after game has started' });
+    }
+
+    // Validate empire color
+    if (!empireColor || !EMPIRE_COLORS.includes(empireColor)) {
+      return res.status(400).json({ error: 'Invalid empire color' });
+    }
+
+    // Get player record
+    const player = db.prepare(`
+      SELECT * FROM game_players WHERE game_id = ? AND user_id = ?
+    `).get(gameId, req.user.id);
+
+    if (!player) {
+      return res.status(403).json({ error: 'You are not in this game' });
+    }
+
+    // Check if color is already taken by someone else
+    const colorTaken = db.prepare(`
+      SELECT id FROM game_players WHERE game_id = ? AND empire_color = ? AND user_id != ?
+    `).get(gameId, empireColor, req.user.id);
+
+    if (colorTaken) {
+      return res.status(400).json({ error: 'This color has already been taken by another player' });
+    }
+
+    // Update empire color
+    db.prepare(`
+      UPDATE game_players SET empire_color = ? WHERE id = ?
+    `).run(empireColor, player.id);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to update empire:', error);
+    res.status(500).json({ error: 'Failed to update empire' });
+  }
+});
+
+// Check for duplicate colors in a game
+router.get('/:id/color-conflicts', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+
+    // Find colors that are used by multiple players
+    const conflicts = db.prepare(`
+      SELECT empire_color, GROUP_CONCAT(user_id) as user_ids, COUNT(*) as count
+      FROM game_players
+      WHERE game_id = ? AND empire_color IS NOT NULL
+      GROUP BY empire_color
+      HAVING count > 1
+    `).all(gameId);
+
+    // For each conflict, find who joined most recently (highest id = most recent)
+    const playersToChange = [];
+    for (const conflict of conflicts) {
+      const userIds = conflict.user_ids.split(',').map(id => parseInt(id));
+      // Get all players with this color, ordered by id descending
+      const players = db.prepare(`
+        SELECT gp.id, gp.user_id, u.display_name
+        FROM game_players gp
+        JOIN users u ON gp.user_id = u.id
+        WHERE gp.game_id = ? AND gp.empire_color = ?
+        ORDER BY gp.id DESC
+      `).all(gameId, conflict.empire_color);
+
+      // All except the first one (oldest) need to change
+      for (let i = 0; i < players.length - 1; i++) {
+        playersToChange.push({
+          odlplayerId: players[i].id,
+          userId: players[i].user_id,
+          displayName: players[i].display_name,
+          conflictingColor: conflict.empire_color
+        });
+      }
+    }
+
+    res.json({ conflicts: playersToChange });
+  } catch (error) {
+    console.error('Failed to check color conflicts:', error);
+    res.status(500).json({ error: 'Failed to check color conflicts' });
   }
 });
 
@@ -200,6 +370,19 @@ router.post('/:id/start', (req, res) => {
 
     if (players.length < 2) {
       return res.status(400).json({ error: 'Need at least 2 players to start' });
+    }
+
+    // Check for duplicate colors
+    const colorConflicts = db.prepare(`
+      SELECT empire_color, COUNT(*) as count
+      FROM game_players
+      WHERE game_id = ? AND empire_color IS NOT NULL
+      GROUP BY empire_color
+      HAVING count > 1
+    `).all(game.id);
+
+    if (colorConflicts.length > 0) {
+      return res.status(400).json({ error: 'Some players have duplicate colors. Please resolve before starting.' });
     }
 
     // Generate the map

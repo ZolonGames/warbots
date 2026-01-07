@@ -109,6 +109,7 @@ function updateMapState() {
   gameMap.setGameState({
     planets: gameState.planets,
     mechs: gameState.mechs,
+    players: gameState.players,
     visibleTiles: gameState.visibleTiles
   });
 }
@@ -232,13 +233,18 @@ function closeEventLogPopout() {
 
 function getPlayerName(playerId) {
   const player = gameState.players.find(p => p.id === playerId);
-  return player ? `Player ${player.player_number}` : 'Unknown';
+  if (player) {
+    // Use empire name if available, otherwise fall back to "Player X"
+    return player.empire_name || `Player ${player.player_number}`;
+  }
+  return 'Unknown';
 }
 
 function getPlayerColor(playerId) {
   const player = gameState.players.find(p => p.id === playerId);
   if (player) {
-    return playerColors[(player.player_number - 1) % playerColors.length];
+    // Use empire color if available, otherwise fall back to default colors
+    return player.empire_color || playerColors[(player.player_number - 1) % playerColors.length];
   }
   return '#888888';
 }
@@ -517,7 +523,6 @@ function getBattleCombatantNames(log) {
 
 // Get battle event as array of reveal items for line-by-line animation
 function getBattleRevealItems(log) {
-  console.log('[BattleReveal] getBattleRevealItems called for log:', log.id, 'at', log.x, log.y);
   const items = [];
   const planet = gameState.planets.find(p => p.x === log.x && p.y === log.y);
   const locationText = formatLocationWithPlanet(log.x, log.y, planet);
@@ -528,7 +533,6 @@ function getBattleRevealItems(log) {
       <span class="log-icon">⚔️</span>
       Battle at ${locationText} between ${combatants.name1} and ${combatants.name2}
     </div>`;
-  console.log('[BattleReveal] Adding header:', headerHtml.substring(0, 60) + '...');
   items.push({
     type: 'event',
     html: headerHtml
@@ -538,7 +542,6 @@ function getBattleRevealItems(log) {
   if (log.isParticipant && log.detailedLog) {
     const battles = log.detailedLog.battles || log.detailedLog;
     const detailItems = getDetailedBattleRevealItems(battles);
-    console.log('[BattleReveal] Adding', detailItems.length, 'detail items');
     for (const item of detailItems) {
       items.push(item);
     }
@@ -546,7 +549,6 @@ function getBattleRevealItems(log) {
 
   // Outcome
   const outcomeHtml = formatBattleOutcome(log);
-  console.log('[BattleReveal] Adding outcome:', outcomeHtml.substring(0, 60) + '...');
   items.push({
     type: 'event',
     html: outcomeHtml
@@ -555,14 +557,12 @@ function getBattleRevealItems(log) {
   // Planet capture (if any)
   const captureHtml = formatBattleCapture(log);
   if (captureHtml) {
-    console.log('[BattleReveal] Adding capture:', captureHtml.substring(0, 60) + '...');
     items.push({
       type: 'event',
       html: captureHtml
     });
   }
 
-  console.log('[BattleReveal] Returning', items.length, 'items');
   return items;
 }
 
@@ -1271,10 +1271,7 @@ let eventRevealQueue = [];
 let isRevealingEvents = false;
 
 function showTurnSummary(turnNumber) {
-  console.log('[TurnSummary] Starting showTurnSummary for turn', turnNumber);
-
   if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
-    console.log('[TurnSummary] No combat logs, returning');
     return;
   }
 
@@ -1283,10 +1280,7 @@ function showTurnSummary(turnNumber) {
     log.turnNumber === turnNumber && log.logType !== 'turn_start'
   );
 
-  console.log('[TurnSummary] Found turnEvents:', turnEvents.length, turnEvents);
-
   if (turnEvents.length === 0) {
-    console.log('[TurnSummary] No events for this turn, returning');
     return;
   }
 
@@ -1318,13 +1312,10 @@ function showTurnSummary(turnNumber) {
 
   // Add combat section - each battle line-by-line
   if (battleEvents.length > 0) {
-    console.log('[TurnSummary] Processing', battleEvents.length, 'battle events');
     eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Combat Results</div>' });
     for (const log of battleEvents) {
       // Get battle items for line-by-line reveal
-      console.log('[TurnSummary] Getting battle reveal items for log:', log);
       const battleItems = getBattleRevealItems(log);
-      console.log('[TurnSummary] Got', battleItems.length, 'battle items:', battleItems);
       for (const item of battleItems) {
         eventRevealQueue.push(item);
       }
@@ -1373,16 +1364,12 @@ function showTurnSummary(turnNumber) {
   }
 
   // Start revealing events
-  console.log('[TurnSummary] Final queue length:', eventRevealQueue.length, eventRevealQueue);
   isRevealingEvents = true;
   revealNextEvent();
 }
 
 function revealNextEvent() {
-  console.log('[RevealNext] Called, queue length:', eventRevealQueue.length);
-
   if (eventRevealQueue.length === 0) {
-    console.log('[RevealNext] Queue empty, finishing');
     isRevealingEvents = false;
     const summaryContainer = document.getElementById('turn-summary-entries');
     summaryContainer.classList.remove('revealing');
@@ -1393,7 +1380,6 @@ function revealNextEvent() {
 
   const summaryContainer = document.getElementById('turn-summary-entries');
   const item = eventRevealQueue.shift();
-  console.log('[RevealNext] Processing item:', item.type, item.html.substring(0, 50) + '...');
 
   // Create a wrapper div for animation
   const wrapper = document.createElement('div');
@@ -1419,7 +1405,6 @@ function revealNextEvent() {
     delay = 800; // Battle details (die rolls, damage, etc.)
   }
 
-  console.log('[RevealNext] Scheduling next reveal in', delay, 'ms');
   setTimeout(revealNextEvent, delay);
 }
 

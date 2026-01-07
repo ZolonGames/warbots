@@ -1,5 +1,18 @@
 // Lobby page functionality
 
+// All 20 empire colors (sorted by hex value)
+const ALL_COLORS = [
+  '#1E90FF', '#2E8B57', '#4169E1', '#4682B4', '#556B2F',
+  '#6A5ACD', '#708090', '#8B0000', '#8B4513', '#9400D3',
+  '#B22222', '#CD853F', '#D2691E', '#DAA520', '#DC143C',
+  '#FF4500', '#FF6347', '#FF8C00', '#FFD700', '#FF69B4'
+];
+
+// State for empire modal
+let empireModalCallback = null;
+let empireModalGameId = null;
+let availableColors = [...ALL_COLORS];
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Check if user is authenticated
   const authData = await api.getMe();
@@ -16,6 +29,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Set up create game form
   document.getElementById('create-game-form').addEventListener('submit', handleCreateGame);
+
+  // Set up empire form
+  document.getElementById('empire-form').addEventListener('submit', handleEmpireSubmit);
 });
 
 async function loadAvailableGames() {
@@ -96,34 +112,128 @@ async function loadMyGames() {
 async function handleCreateGame(e) {
   e.preventDefault();
 
-  const form = e.target;
-  const submitBtn = form.querySelector('button[type="submit"]');
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Creating...';
+  // Store the game settings and show empire modal
+  const gameSettings = {
+    name: document.getElementById('game-name').value,
+    gridSize: parseInt(document.getElementById('grid-size').value),
+    maxPlayers: parseInt(document.getElementById('max-players').value),
+    turnTimer: parseInt(document.getElementById('turn-timer').value)
+  };
 
-  try {
-    const game = await api.createGame({
-      name: document.getElementById('game-name').value,
-      gridSize: parseInt(document.getElementById('grid-size').value),
-      maxPlayers: parseInt(document.getElementById('max-players').value),
-      turnTimer: parseInt(document.getElementById('turn-timer').value)
-    });
+  // For create, all colors are available
+  availableColors = [...ALL_COLORS];
+  empireModalGameId = null;
 
-    // Redirect to the game
-    window.location.href = `/game.html?id=${game.id}`;
-  } catch (error) {
-    alert('Failed to create game: ' + error.message);
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Create Game';
-  }
+  showEmpireModal('Set Up Your Empire', async (empireName, empireColor) => {
+    const submitBtn = document.querySelector('#create-game-form button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+
+    try {
+      const game = await api.createGame({
+        ...gameSettings,
+        empireName,
+        empireColor
+      });
+
+      // Redirect to the game
+      window.location.href = `/game.html?id=${game.id}`;
+    } catch (error) {
+      alert('Failed to create game: ' + error.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create Game';
+    }
+  });
 }
 
 async function joinGame(gameId) {
   try {
-    await api.joinGame(gameId);
-    window.location.href = `/game.html?id=${gameId}`;
+    // Fetch available colors for this game
+    const colorData = await api.getAvailableColors(gameId);
+    availableColors = colorData.colors;
+    empireModalGameId = gameId;
+
+    if (availableColors.length === 0) {
+      alert('No colors available for this game.');
+      return;
+    }
+
+    showEmpireModal('Join Game - Set Up Your Empire', async (empireName, empireColor) => {
+      try {
+        await api.joinGame(gameId, { empireName, empireColor });
+        window.location.href = `/game.html?id=${gameId}`;
+      } catch (error) {
+        alert('Failed to join game: ' + error.message);
+      }
+    });
   } catch (error) {
     alert('Failed to join game: ' + error.message);
+  }
+}
+
+function showEmpireModal(title, callback) {
+  empireModalCallback = callback;
+
+  document.getElementById('empire-modal-title').textContent = title;
+  document.getElementById('empire-name').value = '';
+  document.getElementById('selected-color').value = '';
+
+  // Build color picker
+  const picker = document.getElementById('color-picker');
+  picker.innerHTML = ALL_COLORS.map(color => {
+    const isAvailable = availableColors.includes(color);
+    return `
+      <div class="color-option ${isAvailable ? '' : 'taken'}"
+           style="background-color: ${color};"
+           data-color="${color}"
+           ${isAvailable ? `onclick="selectColor('${color}')"` : ''}
+           title="${isAvailable ? color : 'Already taken'}">
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('empire-modal').style.display = 'flex';
+}
+
+function closeEmpireModal() {
+  document.getElementById('empire-modal').style.display = 'none';
+  empireModalCallback = null;
+}
+
+function selectColor(color) {
+  // Remove selection from all
+  document.querySelectorAll('.color-option').forEach(el => {
+    el.classList.remove('selected');
+  });
+
+  // Add selection to clicked one
+  const selected = document.querySelector(`.color-option[data-color="${color}"]`);
+  if (selected) {
+    selected.classList.add('selected');
+  }
+
+  document.getElementById('selected-color').value = color;
+}
+
+function handleEmpireSubmit(e) {
+  e.preventDefault();
+
+  const empireName = document.getElementById('empire-name').value.trim();
+  const empireColor = document.getElementById('selected-color').value;
+
+  if (!empireName) {
+    alert('Please enter an empire name.');
+    return;
+  }
+
+  if (!empireColor) {
+    alert('Please select a color.');
+    return;
+  }
+
+  if (empireModalCallback) {
+    closeEmpireModal();
+    empireModalCallback(empireName, empireColor);
   }
 }
 

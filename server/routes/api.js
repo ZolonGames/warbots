@@ -43,9 +43,9 @@ router.get('/games/:id/state', (req, res) => {
     // Calculate income
     const income = calculateIncome(gameId, player.id);
 
-    // Get all players for display
+    // Get all players for display (with empire info)
     const players = db.prepare(`
-      SELECT gp.id, gp.player_number, gp.is_eliminated, u.display_name
+      SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, u.display_name
       FROM game_players gp
       JOIN users u ON gp.user_id = u.id
       WHERE gp.game_id = ?

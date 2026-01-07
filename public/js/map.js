@@ -39,6 +39,7 @@ class GameMap {
     // State
     this.planets = [];
     this.mechs = [];
+    this.players = []; // Player info including empire colors
     this.visibleTiles = new Set();
     this.selectedTile = null;
     this.hoveredTile = null;
@@ -403,8 +404,19 @@ class GameMap {
   setGameState(state) {
     this.planets = state.planets || [];
     this.mechs = state.mechs || [];
+    this.players = state.players || [];
     this.visibleTiles = new Set(state.visibleTiles || []);
     this.render();
+  }
+
+  // Get player color by owner_id, using empire color if available
+  getOwnerColor(ownerId) {
+    const player = this.players.find(p => p.id === ownerId);
+    if (player && player.empire_color) {
+      return player.empire_color;
+    }
+    // Fallback to default colors
+    return this.colors.planetOwned[ownerId % this.colors.planetOwned.length];
   }
 
   // Zoom controls (can be called from UI buttons)
@@ -528,7 +540,7 @@ class GameMap {
     if (planet.is_homeworld) {
       ctx.fillStyle = this.colors.homeworld;
     } else if (planet.owner_id !== null) {
-      ctx.fillStyle = this.colors.planetOwned[planet.owner_id % this.colors.planetOwned.length];
+      ctx.fillStyle = this.getOwnerColor(planet.owner_id);
     } else {
       ctx.fillStyle = this.colors.planet;
     }
@@ -561,7 +573,7 @@ class GameMap {
     const px = this.panX + mech.x * tileSize;
     const py = this.panY + mech.y * tileSize;
 
-    const color = this.colors.planetOwned[mech.owner_id % this.colors.planetOwned.length];
+    const color = this.getOwnerColor(mech.owner_id);
 
     // Draw mech icon (robot shape)
     this.drawMechIcon(ctx, px + tileSize * 0.5, py + tileSize * 0.5, tileSize * 0.35, color);

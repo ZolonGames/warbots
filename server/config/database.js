@@ -146,6 +146,24 @@ async function initializeDatabase() {
     // Column might already exist or table doesn't exist yet
   }
 
+  // Migration: Add empire_name and empire_color columns to game_players
+  try {
+    const gamePlayersInfo = db.exec("PRAGMA table_info(game_players)");
+    if (gamePlayersInfo.length > 0) {
+      const columns = gamePlayersInfo[0].values.map(row => row[1]);
+      if (!columns.includes('empire_name')) {
+        db.run('ALTER TABLE game_players ADD COLUMN empire_name TEXT');
+        console.log('Added empire_name column to game_players table');
+      }
+      if (!columns.includes('empire_color')) {
+        db.run('ALTER TABLE game_players ADD COLUMN empire_color TEXT');
+        console.log('Added empire_color column to game_players table');
+      }
+    }
+  } catch (e) {
+    // Columns might already exist or table doesn't exist yet
+  }
+
   // Turns table
   db.run(`
     CREATE TABLE IF NOT EXISTS turns (

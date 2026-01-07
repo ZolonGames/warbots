@@ -54,8 +54,8 @@ const api = {
     return this.post('/api/games', data);
   },
 
-  async joinGame(gameId) {
-    return this.post(`/api/games/${gameId}/join`);
+  async joinGame(gameId, data = {}) {
+    return this.post(`/api/games/${gameId}/join`, data);
   },
 
   async startGame(gameId) {
@@ -76,5 +76,17 @@ const api = {
 
   async deleteGame(gameId) {
     return this.delete(`/api/games/${gameId}`);
+  },
+
+  async getAvailableColors(gameId) {
+    return this.get(`/api/games/${gameId}/colors`);
+  },
+
+  async updateEmpireColor(gameId, empireColor) {
+    return this.post(`/api/games/${gameId}/empire`, { empireColor });
+  },
+
+  async getColorConflicts(gameId) {
+    return this.get(`/api/games/${gameId}/color-conflicts`);
   }
 };
