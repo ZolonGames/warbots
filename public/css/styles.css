@@ -420,16 +420,40 @@ a:hover {
   font-family: monospace;
 }
 
-.player-info {
-  display: flex;
-  gap: 20px;
+/* Resources panel in right sidebar */
+.resources-panel {
+  background: var(--bg-light);
+  border-radius: 6px;
+  padding: 12px;
 }
 
-.credits {
+.resource-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.resource-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resource-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.resource-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.resource-value.credits {
   color: var(--accent-yellow);
 }
 
-.income {
+.resource-value.income {
   color: var(--accent-green);
 }
 
