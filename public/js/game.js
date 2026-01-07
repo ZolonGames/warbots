@@ -1391,6 +1391,14 @@ function showTurnSummary(turnNumber) {
   const overlay = document.getElementById('turn-summary-overlay');
   overlay.style.display = 'flex';
 
+  // Update stats in the header
+  const ownedPlanets = gameState.planets.filter(p => p.owner_id === playerId).length;
+  const ownedMechs = gameState.mechs.filter(m => m.owner_id === playerId).length;
+  document.getElementById('summary-planets').textContent = ownedPlanets;
+  document.getElementById('summary-mechs').textContent = ownedMechs;
+  document.getElementById('summary-credits').textContent = gameState.credits;
+  document.getElementById('summary-income').textContent = gameState.income;
+
   // Update the Start Turn button text
   const startBtn = document.getElementById('start-turn-btn');
   startBtn.textContent = `Start Turn ${turnNumber + 1}`;

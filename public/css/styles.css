@@ -857,6 +857,8 @@ a:hover {
 
 .turn-summary-header {
   justify-content: center;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .turn-summary-header h3 {
@@ -864,6 +866,39 @@ a:hover {
   font-size: 20px;
   text-transform: uppercase;
   letter-spacing: 2px;
+}
+
+.turn-summary-stats {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  font-size: 14px;
+}
+
+.turn-summary-stats .stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.turn-summary-stats .stat-icon {
+  font-size: 16px;
+}
+
+.turn-summary-stats #summary-planets {
+  color: var(--accent-cyan);
+}
+
+.turn-summary-stats #summary-mechs {
+  color: var(--accent-blue);
+}
+
+.turn-summary-stats #summary-credits {
+  color: var(--accent-yellow);
+}
+
+.turn-summary-stats #summary-income {
+  color: var(--accent-green);
 }
 
 .popout-footer {

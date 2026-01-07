@@ -14,7 +14,7 @@
     </div>
     <header class="game-header">
       <div class="game-title">
-        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v0.7.1</span></h1>
+        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v0.7.2</span></h1>
       </div>
       <div class="game-info">
         <span class="game-name" id="game-name">Loading...</span>
@@ -159,6 +159,12 @@
     <div class="popout-window turn-summary-window">
       <div class="popout-header turn-summary-header">
         <h3>Turn Summary</h3>
+        <div id="turn-summary-stats" class="turn-summary-stats">
+          <span class="stat-item"><span class="stat-icon">🌍</span><span id="summary-planets">0</span></span>
+          <span class="stat-item"><span class="stat-icon">🤖</span><span id="summary-mechs">0</span></span>
+          <span class="stat-item"><span class="stat-icon">💰</span><span id="summary-credits">0</span></span>
+          <span class="stat-item"><span class="stat-icon">📈</span>+<span id="summary-income">0</span></span>
+        </div>
       </div>
       <div id="turn-summary-entries" class="popout-content"></div>
       <div class="popout-footer">
