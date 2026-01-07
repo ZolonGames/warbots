@@ -81,6 +81,7 @@ async function initGame(gameId) {
 
     // Set initial state
     updateMapState();
+    updateCombatLog();
 
     // Set up UI handlers
     setupUIHandlers();
@@ -111,6 +112,132 @@ function updatePlayerInfo() {
   displayedCredits = gameState.credits;
   document.getElementById('player-credits').textContent = displayedCredits;
   document.getElementById('player-income').textContent = gameState.income;
+}
+
+function updateCombatLog() {
+  const logContainer = document.getElementById('log-entries');
+
+  if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
+    logContainer.innerHTML = '<div class="log-entry log-empty">No combat this turn</div>';
+    return;
+  }
+
+  let html = '';
+  for (const log of gameState.combatLogs) {
+    html += formatCombatLog(log);
+  }
+
+  logContainer.innerHTML = html;
+}
+
+function getPlayerName(playerId) {
+  const player = gameState.players.find(p => p.id === playerId);
+  return player ? `Player ${player.player_number}` : 'Unknown';
+}
+
+function getPlayerColor(playerId) {
+  const player = gameState.players.find(p => p.id === playerId);
+  if (player) {
+    return playerColors[(player.player_number - 1) % playerColors.length];
+  }
+  return '#888888';
+}
+
+function coloredPlayerName(playerId) {
+  const name = getPlayerName(playerId);
+  const color = getPlayerColor(playerId);
+  return `<span style="color: ${color}; font-weight: bold;">${name}</span>`;
+}
+
+function formatCombatLog(log) {
+  let html = '';
+
+  if (log.logType === 'capture') {
+    // Peaceful capture
+    html += `<div class="log-entry log-capture">`;
+    html += `${coloredPlayerName(log.winnerId)} captured planet at (${log.x}, ${log.y})`;
+    html += `</div>`;
+  } else if (log.logType === 'battle') {
+    // Battle occurred
+    const attackerName = coloredPlayerName(log.attackerId);
+    const defenderName = log.defenderId ? coloredPlayerName(log.defenderId) : '<span style="color: #888;">Neutral</span>';
+
+    html += `<div class="log-entry log-attack">`;
+    html += `A battle occurred at (${log.x}, ${log.y}) between ${attackerName} and ${defenderName}`;
+    html += `</div>`;
+
+    // Detailed log for participants
+    if (log.isParticipant && log.detailedLog) {
+      html += formatDetailedBattleLog(log.detailedLog);
+    }
+
+    // Outcome summary (always shown)
+    const winnerName = coloredPlayerName(log.winnerId);
+    const loserIds = log.participants.filter(id => id !== log.winnerId);
+    const loserId = loserIds[0];
+    const loserName = loserId ? coloredPlayerName(loserId) : '<span style="color: #888;">Neutral forces</span>';
+
+    const winnerCasualties = log.winnerId === log.attackerId ? log.attackerCasualties : log.defenderCasualties;
+    const loserCasualties = log.winnerId === log.attackerId ? log.defenderCasualties : log.attackerCasualties;
+
+    html += `<div class="log-entry log-outcome">`;
+    html += `${winnerName} was victorious! `;
+    html += `${winnerName} suffered ${winnerCasualties} casualt${winnerCasualties === 1 ? 'y' : 'ies'}, `;
+    html += `and ${loserName} suffered ${loserCasualties} casualt${loserCasualties === 1 ? 'y' : 'ies'}!`;
+    html += `</div>`;
+  }
+
+  return html;
+}
+
+function formatDetailedBattleLog(battles) {
+  let html = '<div class="log-detailed">';
+
+  for (const battle of battles) {
+    for (const entry of battle.detailedLog) {
+      if (entry.type === 'round') {
+        html += `<div class="log-round">--- Round ${entry.round} ---</div>`;
+      } else if (entry.type === 'attack') {
+        // New attack format: shows attacker, target, and roll
+        const attackerName = coloredPlayerName(entry.attackerPlayerId);
+        const attackerType = entry.attackerType.charAt(0).toUpperCase() + entry.attackerType.slice(1);
+        const targetName = entry.targetType === 'fortification' ? 'Fortification' : coloredPlayerName(entry.targetPlayerId);
+        const targetType = entry.targetType.charAt(0).toUpperCase() + entry.targetType.slice(1);
+
+        if (entry.attackerType === 'fortification') {
+          html += `<div class="log-roll">Fortification attacks ${targetName}'s ${targetType} → rolls ${entry.roll}</div>`;
+        } else if (entry.targetType === 'fortification') {
+          html += `<div class="log-roll">${attackerName}'s ${attackerType} attacks Fortification → rolls ${entry.roll}</div>`;
+        } else {
+          html += `<div class="log-roll">${attackerName}'s ${attackerType} attacks ${targetName}'s ${targetType} → rolls ${entry.roll}</div>`;
+        }
+      } else if (entry.type === 'roll') {
+        // Legacy roll format (kept for backwards compatibility)
+        const playerName = coloredPlayerName(entry.playerId);
+        const mechName = entry.mechType.charAt(0).toUpperCase() + entry.mechType.slice(1);
+        html += `<div class="log-roll">${playerName}'s ${mechName} rolls ${entry.roll}</div>`;
+      } else if (entry.type === 'damage') {
+        if (entry.mechType === 'fortification') {
+          html += `<div class="log-damage">Fortification takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
+        } else {
+          const playerName = coloredPlayerName(entry.playerId);
+          const mechName = entry.mechType.charAt(0).toUpperCase() + entry.mechType.slice(1);
+          html += `<div class="log-damage">${playerName}'s ${mechName} takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
+        }
+      } else if (entry.type === 'destroyed') {
+        if (entry.mechType === 'fortification') {
+          html += `<div class="log-destroyed">Fortification destroyed!</div>`;
+        } else {
+          const playerName = coloredPlayerName(entry.playerId);
+          const mechName = entry.mechType.charAt(0).toUpperCase() + entry.mechType.slice(1);
+          html += `<div class="log-destroyed">${playerName}'s ${mechName} destroyed!</div>`;
+        }
+      }
+    }
+  }
+
+  html += '</div>';
+  return html;
 }
 
 function updateCreditsDisplay() {
@@ -469,6 +596,27 @@ function showWaitingIndicator(show) {
   }
 }
 
+function showTurnAnnouncement(turnNumber) {
+  const overlay = document.getElementById('turn-overlay');
+  const announcement = document.getElementById('turn-announcement');
+  const turnNumberEl = document.getElementById('turn-announce-number');
+
+  // Set turn number
+  turnNumberEl.textContent = turnNumber;
+
+  // Set faction color
+  const factionColor = playerColors[playerId % playerColors.length] || '#4a9eff';
+  announcement.style.color = factionColor;
+
+  // Trigger animation
+  overlay.classList.add('active');
+
+  // Remove after animation completes
+  setTimeout(() => {
+    overlay.classList.remove('active');
+  }, 2500);
+}
+
 function startTurnTimer(deadline) {
   const timerEl = document.getElementById('turn-timer');
 
@@ -519,13 +667,21 @@ function setupEventSource(gameId) {
 
 async function refreshGameState(gameId) {
   try {
+    const previousTurn = gameState?.currentTurn;
     gameState = await api.getGameState(gameId);
+
     document.getElementById('turn-number').textContent = gameState.currentTurn;
     updatePlayerInfo();
     updateMapState();
+    updateCombatLog();
 
     // Hide waiting indicator on new turn
     showWaitingIndicator(false);
+
+    // Show turn announcement if turn changed
+    if (previousTurn !== null && previousTurn !== undefined && gameState.currentTurn !== previousTurn) {
+      showTurnAnnouncement(gameState.currentTurn);
+    }
 
     if (gameState.turnDeadline) {
       startTurnTimer(new Date(gameState.turnDeadline));

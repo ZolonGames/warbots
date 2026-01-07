@@ -52,6 +52,47 @@ router.get('/games/:id/state', (req, res) => {
       ORDER BY gp.player_number
     `).all(gameId);
 
+    // Get combat logs for the previous turn (what just happened)
+    const previousTurn = game.current_turn > 1 ? game.current_turn - 1 : 0;
+    const rawCombatLogs = db.prepare(`
+      SELECT * FROM combat_logs
+      WHERE game_id = ? AND turn_number = ?
+      ORDER BY id ASC
+    `).all(gameId, previousTurn);
+
+    // Filter and format combat logs based on visibility and participation
+    const combatLogs = rawCombatLogs
+      .filter(log => {
+        // Only show logs for visible tiles
+        const key = `${log.x},${log.y}`;
+        return visibleTiles.has(key);
+      })
+      .map(log => {
+        const participants = JSON.parse(log.participants || '[]');
+        const isParticipant = participants.includes(player.id);
+
+        // Parse detailed log only if participant
+        let detailedLog = null;
+        if (isParticipant && log.detailed_log) {
+          detailedLog = JSON.parse(log.detailed_log);
+        }
+
+        return {
+          id: log.id,
+          x: log.x,
+          y: log.y,
+          logType: log.log_type,
+          participants,
+          winnerId: log.winner_id,
+          attackerId: log.attacker_id,
+          defenderId: log.defender_id,
+          attackerCasualties: log.attacker_casualties,
+          defenderCasualties: log.defender_casualties,
+          isParticipant,
+          detailedLog
+        };
+      });
+
     res.json({
       gameId: game.id,
       name: game.name,
@@ -68,7 +109,8 @@ router.get('/games/:id/state', (req, res) => {
       players,
       planets,
       mechs,
-      visibleTiles: Array.from(visibleTiles)
+      visibleTiles: Array.from(visibleTiles),
+      combatLogs
     });
   } catch (error) {
     console.error('Failed to get game state:', error);

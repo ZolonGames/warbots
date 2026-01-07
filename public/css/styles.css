@@ -487,6 +487,47 @@ a:hover {
   color: var(--accent-yellow);
 }
 
+.log-destroy,
+.log-destroyed {
+  color: var(--accent-red);
+}
+
+.log-empty {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.log-outcome {
+  color: var(--accent-green);
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-color);
+}
+
+.log-detailed {
+  margin: 8px 0;
+  padding: 8px;
+  background: var(--bg-dark);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.log-round {
+  color: var(--text-secondary);
+  margin: 6px 0 2px;
+  font-weight: bold;
+}
+
+.log-roll {
+  color: var(--text-primary);
+  padding-left: 8px;
+}
+
+.log-damage {
+  color: var(--accent-yellow);
+  padding-left: 8px;
+}
+
 /* Tooltip */
 .tooltip {
   position: absolute;
@@ -623,4 +664,81 @@ a:hover {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Turn transition overlay */
+.turn-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.turn-overlay.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.turn-overlay.active .turn-announcement {
+  animation: turnAnnounce 2.5s ease-out forwards;
+}
+
+.turn-announcement {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  opacity: 0;
+  transform: scale(0.8);
+  text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
+}
+
+@keyframes turnAnnounce {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  30% {
+    transform: scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes overlayDim {
+  0% {
+    background: rgba(0, 0, 0, 0);
+  }
+  20% {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  70% {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  100% {
+    background: rgba(0, 0, 0, 0);
+  }
+}
+
+.turn-overlay.active {
+  animation: overlayDim 2.5s ease-out forwards;
 }

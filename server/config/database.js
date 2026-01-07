@@ -131,6 +131,43 @@ async function initializeDatabase() {
     )
   `);
 
+  // Combat logs table - stores full battle data
+  // Drop old table if it exists with wrong schema and recreate
+  try {
+    // Check if table has the new schema by looking for participants column
+    const tableInfo = db.exec("PRAGMA table_info(combat_logs)");
+    if (tableInfo.length > 0) {
+      const columns = tableInfo[0].values.map(row => row[1]);
+      if (!columns.includes('participants')) {
+        // Old schema - drop and recreate
+        db.run('DROP TABLE IF EXISTS combat_logs');
+        console.log('Dropped old combat_logs table to apply new schema');
+      }
+    }
+  } catch (e) {
+    // Table doesn't exist, which is fine
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS combat_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL,
+      turn_number INTEGER NOT NULL,
+      x INTEGER NOT NULL,
+      y INTEGER NOT NULL,
+      log_type TEXT NOT NULL,
+      participants TEXT NOT NULL,
+      winner_id INTEGER,
+      attacker_id INTEGER,
+      defender_id INTEGER,
+      attacker_casualties INTEGER DEFAULT 0,
+      defender_casualties INTEGER DEFAULT 0,
+      detailed_log TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+    )
+  `);
+
   // Create indexes
   db.run('CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_planets_game ON planets(game_id)');
@@ -138,6 +175,7 @@ async function initializeDatabase() {
   db.run('CREATE INDEX IF NOT EXISTS idx_mechs_owner ON mechs(owner_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_buildings_planet ON buildings(planet_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_turns_game ON turns(game_id, turn_number)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_combat_logs_game ON combat_logs(game_id, turn_number)');
 
   // Save to disk
   saveDatabase();
@@ -201,14 +239,15 @@ const dbWrapper = {
     saveDatabase();
   },
   transaction(fn) {
+    // Note: sql.js handles transactions differently than better-sqlite3
+    // We avoid explicit transactions here as they can cause issues with sql.js
+    // Instead, we just run the function and save after each operation
     return () => {
-      db.run('BEGIN TRANSACTION');
       try {
         fn();
-        db.run('COMMIT');
         saveDatabase();
       } catch (error) {
-        db.run('ROLLBACK');
+        // sql.js auto-saves are handled per operation, so just re-throw
         throw error;
       }
     };

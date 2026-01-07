@@ -31,115 +31,179 @@ const FORT_HP = 10;
 
 /**
  * Resolve combat at a single location
+ * Combat is sequential: each round, all units are shuffled and attack one at a time.
+ * Each unit picks a target, rolls damage, and applies it immediately.
+ * Destroyed units cannot attack.
+ *
  * @param {Array} attackers - Array of mech objects (with id, type, hp, owner_id)
  * @param {Array} defenders - Array of mech objects
  * @param {Object|null} fortification - Fortification building or null
- * @returns {Object} Combat result { survivingAttackers, survivingDefenders, fortification, log }
+ * @param {number} attackerId - Attacker player ID
+ * @param {number} defenderId - Defender player ID
+ * @returns {Object} Combat result with detailed log
  */
-function resolveCombat(attackers, defenders, fortification) {
-  const log = [];
+function resolveCombat(attackers, defenders, fortification, attackerId, defenderId) {
+  const detailedLog = []; // Detailed roll-by-roll for participants
 
-  // Clone arrays to avoid modifying originals
-  let activeAttackers = attackers.map(m => ({ ...m }));
-  let activeDefenders = defenders.map(m => ({ ...m }));
-  let activeFort = fortification ? { ...fortification } : null;
+  // Clone arrays to avoid modifying originals, tagging each with their side
+  let activeAttackers = attackers.map(m => ({ ...m, side: 'attacker', playerId: attackerId }));
+  let activeDefenders = defenders.map(m => ({ ...m, side: 'defender', playerId: defenderId }));
+  let activeFort = fortification ? { ...fortification, side: 'defender', playerId: defenderId } : null;
+
+  const initialAttackerCount = activeAttackers.length;
+  const initialDefenderCount = activeDefenders.length;
 
   // Combat continues until one side is eliminated
   let round = 0;
-  const maxRounds = 10; // Safety limit
+  const maxRounds = 20; // Safety limit
 
   while (activeAttackers.length > 0 && (activeDefenders.length > 0 || activeFort) && round < maxRounds) {
     round++;
-    log.push(`--- Combat Round ${round} ---`);
+    detailedLog.push({ type: 'round', round });
 
-    // Calculate attacker damage
-    let attackerDamage = 0;
+    // Helper function to process a single attack
+    function processAttack(unit, unitType) {
+      // Determine valid targets (opposing side)
+      let targets = [];
+      if (unit.side === 'attacker') {
+        // Attackers MUST target fortification first if it exists
+        if (activeFort && activeFort.hp > 0) {
+          targets = [{ unit: activeFort, type: 'fortification' }];
+        } else {
+          targets = activeDefenders.filter(m => m.hp > 0).map(m => ({ unit: m, type: 'mech' }));
+        }
+      } else {
+        // Defenders (including fort) target attackers
+        targets = activeAttackers.filter(m => m.hp > 0).map(m => ({ unit: m, type: 'mech' }));
+      }
+
+      if (targets.length === 0) return; // No valid targets
+
+      // Pick a random target
+      const targetIndex = Math.floor(Math.random() * targets.length);
+      const target = targets[targetIndex];
+
+      // Roll damage
+      const diceString = unitType === 'fortification' ? FORT_ATTACK : MECH_ATTACKS[unit.type];
+      const roll = rollDice(diceString);
+
+      // Log the attack
+      detailedLog.push({
+        type: 'attack',
+        attackerSide: unit.side,
+        attackerType: unitType === 'fortification' ? 'fortification' : unit.type,
+        attackerPlayerId: unit.playerId,
+        targetSide: target.unit.side,
+        targetType: target.type === 'fortification' ? 'fortification' : target.unit.type,
+        targetPlayerId: target.unit.playerId,
+        roll
+      });
+
+      // Apply damage
+      target.unit.hp -= roll;
+
+      detailedLog.push({
+        type: 'damage',
+        side: target.unit.side,
+        mechType: target.type === 'fortification' ? 'fortification' : target.unit.type,
+        damage: roll,
+        hpRemaining: Math.max(0, target.unit.hp),
+        playerId: target.unit.playerId
+      });
+
+      // Check if target is destroyed
+      if (target.unit.hp <= 0) {
+        detailedLog.push({
+          type: 'destroyed',
+          side: target.unit.side,
+          mechType: target.type === 'fortification' ? 'fortification' : target.unit.type,
+          playerId: target.unit.playerId
+        });
+
+        if (target.type === 'fortification') {
+          activeFort = null;
+        } else {
+          // Remove from active list
+          if (target.unit.side === 'attacker') {
+            activeAttackers = activeAttackers.filter(m => m.id !== target.unit.id);
+          } else {
+            activeDefenders = activeDefenders.filter(m => m.id !== target.unit.id);
+          }
+        }
+      }
+    }
+
+    // PHASE 1: Fortification attacks first (if exists)
+    if (activeFort && activeFort.hp > 0 && activeAttackers.length > 0) {
+      processAttack(activeFort, 'fortification');
+    }
+
+    // PHASE 2: All mechs attack in randomized order
+    // Build list of all mechs for this round
+    const combatants = [];
     for (const mech of activeAttackers) {
-      const roll = rollDice(MECH_ATTACKS[mech.type]);
-      attackerDamage += roll;
-      log.push(`Attacker ${mech.type} rolls ${roll}`);
+      combatants.push({ unit: mech, type: 'mech' });
     }
-
-    // Calculate defender damage (mechs + fortification)
-    let defenderDamage = 0;
     for (const mech of activeDefenders) {
-      const roll = rollDice(MECH_ATTACKS[mech.type]);
-      defenderDamage += roll;
-      log.push(`Defender ${mech.type} rolls ${roll}`);
+      combatants.push({ unit: mech, type: 'mech' });
     }
 
-    if (activeFort) {
-      const fortRoll = rollDice(FORT_ATTACK);
-      defenderDamage += fortRoll;
-      log.push(`Fortification rolls ${fortRoll}`);
+    // Randomize attack order for this round
+    shuffleArray(combatants);
+
+    // Each mech attacks in order
+    for (const combatant of combatants) {
+      const { unit, type } = combatant;
+
+      // Check if this unit is still alive (might have been destroyed earlier this round)
+      const isAttacker = unit.side === 'attacker';
+      const stillAlive = isAttacker
+        ? activeAttackers.some(m => m.id === unit.id && m.hp > 0)
+        : activeDefenders.some(m => m.id === unit.id && m.hp > 0);
+
+      if (!stillAlive) continue; // Skip destroyed mechs
+
+      // Check if there are valid targets
+      if (isAttacker && activeDefenders.length === 0 && (!activeFort || activeFort.hp <= 0)) continue;
+      if (!isAttacker && activeAttackers.length === 0) continue;
+
+      processAttack(unit, type);
     }
 
-    // Apply attacker damage to defenders
-    // Fortification absorbs damage first
-    if (activeFort && attackerDamage > 0) {
-      const fortDamage = Math.min(attackerDamage, activeFort.hp);
-      activeFort.hp -= fortDamage;
-      attackerDamage -= fortDamage;
-      log.push(`Fortification takes ${fortDamage} damage (${activeFort.hp} HP remaining)`);
-
-      if (activeFort.hp <= 0) {
-        log.push('Fortification destroyed!');
-        activeFort = null;
-      }
-    }
-
-    // Remaining damage goes to mechs
-    while (attackerDamage > 0 && activeDefenders.length > 0) {
-      // Pick a random defender to take damage
-      const targetIndex = Math.floor(Math.random() * activeDefenders.length);
-      const target = activeDefenders[targetIndex];
-
-      const damage = Math.min(attackerDamage, target.hp);
-      target.hp -= damage;
-      attackerDamage -= damage;
-      log.push(`Defender ${target.type} takes ${damage} damage (${target.hp} HP remaining)`);
-
-      if (target.hp <= 0) {
-        log.push(`Defender ${target.type} destroyed!`);
-        activeDefenders.splice(targetIndex, 1);
-      }
-    }
-
-    // Apply defender damage to attackers
-    while (defenderDamage > 0 && activeAttackers.length > 0) {
-      const targetIndex = Math.floor(Math.random() * activeAttackers.length);
-      const target = activeAttackers[targetIndex];
-
-      const damage = Math.min(defenderDamage, target.hp);
-      target.hp -= damage;
-      defenderDamage -= damage;
-      log.push(`Attacker ${target.type} takes ${damage} damage (${target.hp} HP remaining)`);
-
-      if (target.hp <= 0) {
-        log.push(`Attacker ${target.type} destroyed!`);
-        activeAttackers.splice(targetIndex, 1);
-      }
-    }
+    // Clean up any mechs that might have 0 or less HP
+    activeAttackers = activeAttackers.filter(m => m.hp > 0);
+    activeDefenders = activeDefenders.filter(m => m.hp > 0);
+    if (activeFort && activeFort.hp <= 0) activeFort = null;
   }
 
   // Determine winner
   let winner = null;
+  let winnerId = null;
   if (activeAttackers.length > 0 && activeDefenders.length === 0 && !activeFort) {
     winner = 'attackers';
-    log.push('Attackers win!');
+    winnerId = attackerId;
   } else if (activeAttackers.length === 0) {
     winner = 'defenders';
-    log.push('Defenders win!');
-  } else {
-    log.push('Combat continues (max rounds reached)');
+    winnerId = defenderId;
   }
 
+  const attackerCasualties = initialAttackerCount - activeAttackers.length;
+  const defenderCasualties = initialDefenderCount - activeDefenders.length;
+
+  // Remove the side/playerId tags we added before returning
+  const cleanMech = m => ({ id: m.id, type: m.type, hp: m.hp, max_hp: m.max_hp, owner_id: m.owner_id });
+
   return {
-    survivingAttackers: activeAttackers,
-    survivingDefenders: activeDefenders,
-    fortification: activeFort,
+    survivingAttackers: activeAttackers.map(cleanMech),
+    survivingDefenders: activeDefenders.map(cleanMech),
+    fortification: activeFort ? { id: activeFort.id, hp: activeFort.hp, type: activeFort.type } : null,
     winner,
-    log
+    winnerId,
+    attackerId,
+    defenderId,
+    attackerCasualties,
+    defenderCasualties,
+    detailedLog
   };
 }
 
@@ -152,8 +216,8 @@ function resolveCombat(attackers, defenders, fortification) {
  * @returns {Object} Combat results
  */
 function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
-  const log = [];
   const results = {};
+  const battles = []; // Store each battle's detailed info
 
   // Get list of all players involved
   const playerIds = Object.keys(forcesByOwner).map(Number);
@@ -169,15 +233,30 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
   // Randomize attacker order
   shuffleArray(attackerIds);
 
+  // Track total casualties
+  let totalAttackerCasualties = 0;
+  let totalDefenderCasualties = 0;
+  const initialDefenderCount = currentDefenderMechs.length;
+
   for (const attackerId of attackerIds) {
     const attackerMechs = forcesByOwner[attackerId]?.mechs || [];
 
     if (attackerMechs.length === 0) continue;
 
-    log.push(`\n=== Player ${attackerId} attacks Player ${currentDefender || 'neutral'} ===`);
+    const result = resolveCombat(attackerMechs, currentDefenderMechs, currentFort, attackerId, currentDefender);
 
-    const result = resolveCombat(attackerMechs, currentDefenderMechs, currentFort);
-    log.push(...result.log);
+    battles.push({
+      attackerId,
+      defenderId: currentDefender,
+      detailedLog: result.detailedLog,
+      winner: result.winner,
+      winnerId: result.winnerId,
+      attackerCasualties: result.attackerCasualties,
+      defenderCasualties: result.defenderCasualties
+    });
+
+    totalAttackerCasualties += result.attackerCasualties;
+    totalDefenderCasualties += result.defenderCasualties;
 
     if (result.winner === 'attackers') {
       // Attacker won - they become the new defender
@@ -211,7 +290,12 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
     survivingMechs: currentDefenderMechs,
     fortification: currentFort,
     results,
-    log
+    battles,
+    participants: playerIds,
+    winnerId: currentDefenderMechs.length > 0 ? currentDefender : null,
+    originalDefenderId: defenderId,
+    totalAttackerCasualties,
+    totalDefenderCasualties: initialDefenderCount - currentDefenderMechs.length
   };
 }
 

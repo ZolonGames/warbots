@@ -110,6 +110,9 @@ function processMovements(gameId, ordersByPlayer) {
  * Detect and resolve all combats
  */
 function resolveCombats(gameId) {
+  const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
+  const turnNumber = game.current_turn;
+
   // Find all tiles with opposing forces
   const conflictTiles = db.prepare(`
     SELECT x, y, COUNT(DISTINCT owner_id) as owner_count
@@ -153,6 +156,9 @@ function resolveCombats(gameId) {
     // Resolve combat
     const result = resolveMultiCombat(forcesByOwner, fortification, defenderId);
 
+    // Store detailed battle log
+    addBattleLog(gameId, turnNumber, tile.x, tile.y, result);
+
     // Update database with results
 
     // Remove all destroyed mechs at this tile
@@ -193,10 +199,50 @@ function resolveCombats(gameId) {
 }
 
 /**
+ * Add a battle log entry with full details
+ */
+function addBattleLog(gameId, turnNumber, x, y, result) {
+  const participants = JSON.stringify(result.participants);
+  const detailedLog = JSON.stringify(result.battles);
+
+  // For a 2-player battle, get attacker and defender
+  const battle = result.battles[0];
+  const attackerId = battle?.attackerId || null;
+  const defenderId = result.originalDefenderId;
+
+  db.prepare(`
+    INSERT INTO combat_logs (game_id, turn_number, x, y, log_type, participants, winner_id, attacker_id, defender_id, attacker_casualties, defender_casualties, detailed_log)
+    VALUES (?, ?, ?, ?, 'battle', ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    gameId, turnNumber, x, y,
+    participants,
+    result.winnerId,
+    attackerId,
+    defenderId,
+    result.totalAttackerCasualties,
+    result.totalDefenderCasualties,
+    detailedLog
+  );
+}
+
+/**
+ * Add a capture log entry (for peaceful captures)
+ */
+function addCaptureLog(gameId, turnNumber, x, y, newOwnerId) {
+  db.prepare(`
+    INSERT INTO combat_logs (game_id, turn_number, x, y, log_type, participants, winner_id, attacker_id, defender_id, attacker_casualties, defender_casualties, detailed_log)
+    VALUES (?, ?, ?, ?, 'capture', ?, ?, ?, NULL, 0, 0, NULL)
+  `).run(gameId, turnNumber, x, y, JSON.stringify([newOwnerId]), newOwnerId, newOwnerId);
+}
+
+/**
  * Capture undefended planets
  * When mechs occupy a planet with no opposing forces, they capture it
  */
 function capturePlanets(gameId) {
+  const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
+  const turnNumber = game.current_turn;
+
   // Get all planets in the game
   const planets = db.prepare('SELECT * FROM planets WHERE game_id = ?').all(gameId);
 
@@ -215,6 +261,8 @@ function capturePlanets(gameId) {
         db.prepare(`
           UPDATE planets SET owner_id = ? WHERE id = ?
         `).run(newOwnerId, planet.id);
+
+        addCaptureLog(gameId, turnNumber, planet.x, planet.y, newOwnerId);
 
         console.log(`Planet at (${planet.x}, ${planet.y}) captured by player ${newOwnerId}`);
       }
