@@ -86,8 +86,10 @@ async function initGame(gameId) {
     // Set up UI handlers
     setupUIHandlers();
 
-    // Check if player has already submitted their turn
-    if (gameState.hasSubmittedTurn) {
+    // Check game status and show appropriate indicator
+    if (gameState.status === 'waiting') {
+      showWaitingForPlayers(true);
+    } else if (gameState.hasSubmittedTurn) {
       showWaitingIndicator(true);
     }
 
@@ -1251,6 +1253,19 @@ function showWaitingIndicator(show) {
   }
 }
 
+function showWaitingForPlayers(show) {
+  const indicator = document.getElementById('waiting-for-players');
+  const submitBtn = document.getElementById('submit-turn');
+
+  if (show) {
+    indicator.style.display = 'flex';
+    submitBtn.style.display = 'none';
+  } else {
+    indicator.style.display = 'none';
+    submitBtn.style.display = 'inline-flex';
+  }
+}
+
 function showTurnAnnouncement(turnNumber) {
   const overlay = document.getElementById('turn-overlay');
   const announcement = document.getElementById('turn-announcement');
@@ -1506,8 +1521,9 @@ async function refreshGameState(gameId) {
     updateEventLog();
     refreshMechsPanel();
 
-    // Hide waiting indicator on new turn
+    // Hide waiting indicators on new turn / game start
     showWaitingIndicator(false);
+    showWaitingForPlayers(false);
 
     // Show turn announcement if turn changed
     if (previousTurn !== null && previousTurn !== undefined && gameState.currentTurn !== previousTurn) {
