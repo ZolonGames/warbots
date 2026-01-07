@@ -38,47 +38,44 @@ function processTurn(gameId) {
     ordersByPlayer[turn.player_id] = JSON.parse(turn.orders);
   }
 
-  // Use a transaction for all updates
-  db.transaction(() => {
-    // 1. Process movements (simultaneously)
-    processMovements(gameId, ordersByPlayer);
+  // 1. Process movements (simultaneously)
+  processMovements(gameId, ordersByPlayer);
 
-    // 2. Detect and resolve combats
-    resolveCombats(gameId);
+  // 2. Detect and resolve combats
+  resolveCombats(gameId);
 
-    // 3. Process builds
-    processBuilds(gameId, ordersByPlayer, players);
+  // 3. Process builds
+  processBuilds(gameId, ordersByPlayer, players);
 
-    // 4. Calculate and apply income
-    applyIncome(gameId, players);
+  // 4. Calculate and apply income
+  applyIncome(gameId, players);
 
-    // 5. Heal mechs on planets
-    healMechs(gameId);
+  // 5. Heal mechs on planets
+  healMechs(gameId);
 
-    // 6. Check for eliminated players
-    checkEliminations(gameId);
+  // 6. Check for eliminated players
+  checkEliminations(gameId);
 
-    // 7. Check win condition
-    const winner = checkWinCondition(gameId);
+  // 7. Check win condition
+  const winner = checkWinCondition(gameId);
 
-    // 8. Advance turn or end game
-    if (winner) {
-      db.prepare(`
-        UPDATE games SET status = 'finished', winner_id = ? WHERE id = ?
-      `).run(winner.user_id, gameId);
-    } else {
-      // Reset turn submission flags
-      db.prepare(`
-        UPDATE game_players SET has_submitted_turn = 0 WHERE game_id = ?
-      `).run(gameId);
+  // 8. Advance turn or end game
+  if (winner) {
+    db.prepare(`
+      UPDATE games SET status = 'finished', winner_id = ? WHERE id = ?
+    `).run(winner.user_id, gameId);
+  } else {
+    // Reset turn submission flags
+    db.prepare(`
+      UPDATE game_players SET has_submitted_turn = 0 WHERE game_id = ?
+    `).run(gameId);
 
-      // Advance turn counter and set new deadline
-      const turnDeadline = new Date(Date.now() + game.turn_timer * 1000).toISOString();
-      db.prepare(`
-        UPDATE games SET current_turn = current_turn + 1, turn_deadline = ? WHERE id = ?
-      `).run(turnDeadline, gameId);
-    }
-  })();
+    // Advance turn counter and set new deadline
+    const turnDeadline = new Date(Date.now() + game.turn_timer * 1000).toISOString();
+    db.prepare(`
+      UPDATE games SET current_turn = current_turn + 1, turn_deadline = ? WHERE id = ?
+    `).run(turnDeadline, gameId);
+  }
 
   console.log(`Turn ${game.current_turn} processed for game ${gameId}`);
 }

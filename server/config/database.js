@@ -154,14 +154,24 @@ function saveDatabase() {
   }
 }
 
+// Helper to get last insert rowid
+function getLastInsertRowid() {
+  const stmt = db.prepare('SELECT last_insert_rowid() as id');
+  stmt.step();
+  const result = stmt.getAsObject();
+  stmt.free();
+  return result.id;
+}
+
 // Wrapper to provide better-sqlite3-like API
 const dbWrapper = {
   prepare(sql) {
     return {
       run(...params) {
         db.run(sql, params);
+        const lastId = getLastInsertRowid();
         saveDatabase();
-        return { lastInsertRowid: db.exec('SELECT last_insert_rowid()')[0]?.values[0]?.[0] };
+        return { lastInsertRowid: lastId };
       },
       get(...params) {
         const stmt = db.prepare(sql);

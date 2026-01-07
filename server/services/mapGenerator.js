@@ -130,28 +130,23 @@ function generateMap(gameId, gridSize, players) {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Use a transaction for performance
-  const insertAll = db.transaction(() => {
-    // Insert homeworlds
-    for (const hw of homeworlds) {
-      const result = insertPlanet.run(gameId, hw.x, hw.y, 5, hw.playerId, 1);
-      const planetId = result.lastInsertRowid;
+  // Insert homeworlds
+  for (const hw of homeworlds) {
+    const result = insertPlanet.run(gameId, hw.x, hw.y, 5, hw.playerId, 1);
+    const planetId = result.lastInsertRowid;
 
-      // Add starting factory
-      insertBuilding.run(planetId, 'factory', 10);
+    // Add starting factory
+    insertBuilding.run(planetId, 'factory', 10);
 
-      // Add starting mechs (2 light mechs)
-      insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y);
-      insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y);
-    }
+    // Add starting mechs (2 light mechs)
+    insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y);
+    insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y);
+  }
 
-    // Insert regular planets
-    for (const planet of planets) {
-      insertPlanet.run(gameId, planet.x, planet.y, planet.income, null, 0);
-    }
-  });
-
-  insertAll();
+  // Insert regular planets
+  for (const planet of planets) {
+    insertPlanet.run(gameId, planet.x, planet.y, planet.income, null, 0);
+  }
 
   console.log(`Generated map for game ${gameId}: ${homeworlds.length} homeworlds, ${planets.length} planets`);
 }
