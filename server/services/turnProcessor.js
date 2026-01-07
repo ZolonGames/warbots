@@ -460,9 +460,14 @@ function processBuilds(gameId, turnNumber, ordersByPlayer, players) {
 
     // Deduct total cost from player
     if (totalCost > 0) {
+      console.log(`Deducting ${totalCost} credits from player ${player.id} (had ${player.credits})`);
       db.prepare(`
         UPDATE game_players SET credits = credits - ? WHERE id = ?
       `).run(totalCost, player.id);
+
+      // Verify the deduction
+      const updated = db.prepare('SELECT credits FROM game_players WHERE id = ?').get(player.id);
+      console.log(`Player ${player.id} now has ${updated?.credits} credits`);
     }
   }
 }
