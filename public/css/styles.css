@@ -398,7 +398,9 @@ a:hover {
 }
 
 .build-btn {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   width: 100%;
   padding: 8px 12px;
   margin-bottom: 6px;
@@ -411,13 +413,42 @@ a:hover {
   font-size: 14px;
 }
 
-.build-btn:hover {
+.build-btn:hover:not(:disabled) {
   border-color: var(--accent-blue);
 }
 
 .build-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.7;
   cursor: not-allowed;
+}
+
+.build-btn .build-name {
+  flex: 1;
+}
+
+.build-btn .build-status {
+  color: var(--accent-yellow);
+  font-size: 12px;
+}
+
+.build-btn.already-built .build-status {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.build-btn.no-credits .build-status {
+  color: var(--accent-red);
+  font-size: 11px;
+}
+
+.build-btn.no-factory .build-status {
+  color: var(--accent-red);
+  font-size: 11px;
+}
+
+.build-btn.queued .build-status {
+  color: var(--accent-blue);
+  font-style: italic;
 }
 
 /* Game footer */

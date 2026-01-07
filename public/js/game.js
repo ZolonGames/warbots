@@ -115,6 +115,16 @@ function updatePlayerInfo() {
 
 function updateCreditsDisplay() {
   document.getElementById('player-credits').textContent = displayedCredits;
+
+  // Also update build buttons if a planet is selected
+  if (gameMap && gameMap.selectedTile) {
+    const planet = gameState.planets.find(
+      p => p.x === gameMap.selectedTile.x && p.y === gameMap.selectedTile.y
+    );
+    if (planet && planet.owner_id === playerId) {
+      updateBuildButtons(planet);
+    }
+  }
 }
 
 function getCost(type, buildType) {
@@ -244,27 +254,57 @@ function updateBuildButtons(planet) {
   const hasFactory = planet.buildings && planet.buildings.some(b => b.type === 'factory');
   const existingBuildings = new Set((planet.buildings || []).map(b => b.type));
 
+  // Check which buildings are already queued for this planet
+  const queuedBuildings = new Set(
+    pendingOrders.builds
+      .filter(b => b.planetId === planet.id && b.type === 'building')
+      .map(b => b.buildingType)
+  );
+
+  // Check if a factory is queued (for mech building)
+  const factoryQueued = pendingOrders.builds.some(
+    b => b.planetId === planet.id && b.type === 'building' && b.buildingType === 'factory'
+  );
+
   document.querySelectorAll('.build-btn').forEach(btn => {
     const type = btn.dataset.type;
     const buildType = btn.dataset.build;
+    const cost = parseInt(btn.dataset.cost, 10);
+    const statusEl = btn.querySelector('.build-status');
+
+    // Reset classes
+    btn.classList.remove('already-built', 'no-credits', 'no-factory', 'queued');
+    btn.disabled = false;
 
     if (type === 'building') {
       // Check if building already exists on this planet
       if (existingBuildings.has(buildType)) {
         btn.disabled = true;
-        btn.title = 'Already built on this planet';
+        btn.classList.add('already-built');
+        statusEl.textContent = 'Already built';
+      } else if (queuedBuildings.has(buildType)) {
+        btn.disabled = true;
+        btn.classList.add('queued');
+        statusEl.textContent = 'Queued';
+      } else if (displayedCredits < cost) {
+        btn.disabled = true;
+        btn.classList.add('no-credits');
+        statusEl.textContent = 'Not enough credits!';
       } else {
-        btn.disabled = false;
-        btn.title = '';
+        statusEl.textContent = `(${cost})`;
       }
     } else if (type === 'mech') {
-      // Mechs require a factory
-      if (!hasFactory) {
+      // Mechs require a factory (existing or queued)
+      if (!hasFactory && !factoryQueued) {
         btn.disabled = true;
-        btn.title = 'Requires a Factory';
+        btn.classList.add('no-factory');
+        statusEl.textContent = 'Requires Factory';
+      } else if (displayedCredits < cost) {
+        btn.disabled = true;
+        btn.classList.add('no-credits');
+        statusEl.textContent = 'Not enough credits!';
       } else {
-        btn.disabled = false;
-        btn.title = '';
+        statusEl.textContent = `(${cost})`;
       }
     }
   });
@@ -309,22 +349,23 @@ function setupUIHandlers() {
 function addBuildOrder(planetId, type, buildType) {
   const cost = getCost(type, buildType);
 
-  // Check if player has enough credits
+  // Check if player has enough credits (button should be disabled, but double-check)
   if (displayedCredits < cost) {
-    alert(`Not enough credits! Need ${cost}, have ${displayedCredits}.`);
     return;
   }
 
   // Deduct credits
   displayedCredits -= cost;
-  updateCreditsDisplay();
 
+  // Add order first, then update displays so button states reflect the new order
   pendingOrders.builds.push({
     planetId,
     type,
     [type === 'mech' ? 'mechType' : 'buildingType']: buildType,
     cost // Store cost for refund
   });
+
+  updateCreditsDisplay();
   updateOrdersList();
 }
 
@@ -371,15 +412,22 @@ function updateOrdersList() {
 
 function removeOrder(type, index) {
   // Refund credits if removing a build order
+  let refundAmount = 0;
   if (type === 'builds' && pendingOrders.builds[index]) {
     const order = pendingOrders.builds[index];
     if (order.cost) {
-      displayedCredits += order.cost;
-      updateCreditsDisplay();
+      refundAmount = order.cost;
     }
   }
 
+  // Remove order first, then update displays so button states reflect the removal
   pendingOrders[type].splice(index, 1);
+
+  if (refundAmount > 0) {
+    displayedCredits += refundAmount;
+    updateCreditsDisplay();
+  }
+
   updateOrdersList();
 }
 
