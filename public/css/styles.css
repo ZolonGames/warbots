@@ -356,6 +356,40 @@ a:hover {
   height: 100%;
 }
 
+/* Map controls */
+.map-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-medium);
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.map-btn:hover {
+  background: var(--bg-light);
+}
+
+.map-btn:active {
+  transform: scale(0.95);
+}
+
 /* Build panel */
 .build-options h4 {
   font-size: 12px;

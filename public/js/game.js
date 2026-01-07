@@ -245,6 +245,11 @@ function setupUIHandlers() {
 
   // Clear orders button
   document.getElementById('clear-orders').addEventListener('click', clearOrders);
+
+  // Map controls
+  document.getElementById('zoom-in').addEventListener('click', () => gameMap.zoomIn());
+  document.getElementById('zoom-out').addEventListener('click', () => gameMap.zoomOut());
+  document.getElementById('reset-view').addEventListener('click', () => gameMap.resetView());
 }
 
 function addBuildOrder(planetId, type, buildType) {
