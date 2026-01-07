@@ -376,14 +376,36 @@ a:hover {
   border-bottom: 1px solid var(--border-color);
 }
 
+.game-title {
+  display: flex;
+  align-items: center;
+}
+
+.game-title h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.game-title h1 a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.game-title h1 a:hover {
+  text-decoration: none;
+  opacity: 0.8;
+}
+
 .game-info {
   display: flex;
   align-items: center;
   gap: 20px;
 }
 
-.game-info h1 {
-  font-size: 20px;
+.game-info .game-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .turn-info, .timer {
