@@ -92,6 +92,7 @@ function getVisiblePlanets(gameId, playerId, visibleTiles) {
         owner_id: planet.owner_id,
         is_homeworld: planet.is_homeworld,
         is_owned: planet.is_owned,
+        name: planet.name,
         buildings
       });
     }
@@ -130,7 +131,8 @@ function getVisibleMechs(gameId, playerId, visibleTiles) {
         hp: mech.hp,
         max_hp: mech.max_hp,
         owner_id: mech.owner_id,
-        is_owned: mech.is_owned
+        is_owned: mech.is_owned,
+        designation: mech.designation
       });
     }
   }

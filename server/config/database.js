@@ -83,11 +83,26 @@ async function initializeDatabase() {
       base_income INTEGER NOT NULL CHECK (base_income >= 1 AND base_income <= 5),
       owner_id INTEGER,
       is_homeworld INTEGER DEFAULT 0,
+      name TEXT,
       FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
       FOREIGN KEY (owner_id) REFERENCES game_players(id),
       UNIQUE (game_id, x, y)
     )
   `);
+
+  // Migration: Add name column to planets if it doesn't exist
+  try {
+    const planetTableInfo = db.exec("PRAGMA table_info(planets)");
+    if (planetTableInfo.length > 0) {
+      const columns = planetTableInfo[0].values.map(row => row[1]);
+      if (!columns.includes('name')) {
+        db.run('ALTER TABLE planets ADD COLUMN name TEXT');
+        console.log('Added name column to planets table');
+      }
+    }
+  } catch (e) {
+    // Column might already exist or table doesn't exist yet
+  }
 
   // Buildings table
   db.run(`
@@ -111,10 +126,25 @@ async function initializeDatabase() {
       max_hp INTEGER NOT NULL,
       x INTEGER NOT NULL,
       y INTEGER NOT NULL,
+      designation TEXT,
       FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
       FOREIGN KEY (owner_id) REFERENCES game_players(id)
     )
   `);
+
+  // Migration: Add designation column if it doesn't exist
+  try {
+    const mechTableInfo = db.exec("PRAGMA table_info(mechs)");
+    if (mechTableInfo.length > 0) {
+      const columns = mechTableInfo[0].values.map(row => row[1]);
+      if (!columns.includes('designation')) {
+        db.run('ALTER TABLE mechs ADD COLUMN designation TEXT');
+        console.log('Added designation column to mechs table');
+      }
+    }
+  } catch (e) {
+    // Column might already exist or table doesn't exist yet
+  }
 
   // Turns table
   db.run(`

@@ -221,4 +221,52 @@ router.post('/:id/start', (req, res) => {
   }
 });
 
+// Delete a game (host only)
+router.delete('/:id', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    if (game.host_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the host can delete the game' });
+    }
+
+    // Delete all associated data in the correct order (foreign key dependencies)
+    // 1. Delete combat logs
+    db.prepare('DELETE FROM combat_logs WHERE game_id = ?').run(gameId);
+
+    // 2. Delete turns
+    db.prepare('DELETE FROM turns WHERE game_id = ?').run(gameId);
+
+    // 3. Delete mechs
+    db.prepare('DELETE FROM mechs WHERE game_id = ?').run(gameId);
+
+    // 4. Delete buildings (via planets)
+    db.prepare(`
+      DELETE FROM buildings WHERE planet_id IN (
+        SELECT id FROM planets WHERE game_id = ?
+      )
+    `).run(gameId);
+
+    // 5. Delete planets
+    db.prepare('DELETE FROM planets WHERE game_id = ?').run(gameId);
+
+    // 6. Delete game_players
+    db.prepare('DELETE FROM game_players WHERE game_id = ?').run(gameId);
+
+    // 7. Delete the game itself
+    db.prepare('DELETE FROM games WHERE id = ?').run(gameId);
+
+    console.log(`Game ${gameId} deleted by host ${req.user.id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete game:', error);
+    res.status(500).json({ error: 'Failed to delete game' });
+  }
+});
+
 module.exports = router;

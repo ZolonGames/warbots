@@ -71,35 +71,43 @@
           <h3>Build</h3>
           <div class="build-options">
             <h4>Buildings</h4>
-            <button class="build-btn" data-type="building" data-build="mining" data-cost="5">
+            <button class="build-btn" data-type="building" data-build="mining" data-cost="10">
               <span class="build-name">Mining Colony</span>
-              <span class="build-status">(5)</span>
-            </button>
-            <button class="build-btn" data-type="building" data-build="factory" data-cost="10">
-              <span class="build-name">Factory</span>
               <span class="build-status">(10)</span>
             </button>
-            <button class="build-btn" data-type="building" data-build="fortification" data-cost="8">
+            <button class="build-btn" data-type="building" data-build="factory" data-cost="30">
+              <span class="build-name">Factory</span>
+              <span class="build-status">(30)</span>
+            </button>
+            <button class="build-btn" data-type="building" data-build="fortification" data-cost="25">
               <span class="build-name">Fortification</span>
-              <span class="build-status">(8)</span>
+              <span class="build-status">(25)</span>
             </button>
 
             <h4>Mechs</h4>
-            <button class="build-btn" data-type="mech" data-build="light" data-cost="1">
-              <span class="build-name">Light Mech</span>
-              <span class="build-status">(1)</span>
+            <div id="mech-buttons">
+              <button class="build-btn" data-type="mech" data-build="light" data-cost="2">
+                <span class="build-name">Light Mech</span>
+                <span class="build-status">(2)</span>
+              </button>
+              <button class="build-btn" data-type="mech" data-build="medium" data-cost="5">
+                <span class="build-name">Medium Mech</span>
+                <span class="build-status">(5)</span>
+              </button>
+              <button class="build-btn" data-type="mech" data-build="heavy" data-cost="12">
+                <span class="build-name">Heavy Mech</span>
+                <span class="build-status">(12)</span>
+              </button>
+              <button class="build-btn" data-type="mech" data-build="assault" data-cost="20">
+                <span class="build-name">Assault Mech</span>
+                <span class="build-status">(20)</span>
+              </button>
+            </div>
+            <button id="mech-manufacturing" class="build-btn queued" style="display: none;" disabled>
+              <span class="build-name">Manufacturing...</span>
             </button>
-            <button class="build-btn" data-type="mech" data-build="medium" data-cost="2">
-              <span class="build-name">Medium Mech</span>
-              <span class="build-status">(2)</span>
-            </button>
-            <button class="build-btn" data-type="mech" data-build="heavy" data-cost="4">
-              <span class="build-name">Heavy Mech</span>
-              <span class="build-status">(4)</span>
-            </button>
-            <button class="build-btn" data-type="mech" data-build="assault" data-cost="8">
-              <span class="build-name">Assault Mech</span>
-              <span class="build-status">(8)</span>
+            <button id="mech-no-factory" class="build-btn no-factory" style="display: none;" disabled>
+              <span class="build-name">Build a Factory to manufacture mechs</span>
             </button>
           </div>
         </section>
@@ -107,11 +115,38 @@
     </main>
 
     <footer class="game-footer">
-      <div id="combat-log">
-        <h4>Combat Log</h4>
+      <div id="event-log">
+        <div class="log-header">
+          <h4>Event Log</h4>
+          <button id="popout-log" class="popout-btn" title="Pop out to new window">&#8599;</button>
+        </div>
         <div id="log-entries"></div>
       </div>
     </footer>
+  </div>
+
+  <!-- Turn Summary Window (auto-popup at turn start) -->
+  <div id="turn-summary-overlay" class="popout-overlay" style="display: none;">
+    <div class="popout-window turn-summary-window">
+      <div class="popout-header turn-summary-header">
+        <h3>Turn Summary</h3>
+      </div>
+      <div id="turn-summary-entries" class="popout-content"></div>
+      <div class="popout-footer">
+        <button id="start-turn-btn" class="btn btn-primary">Start Turn</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pop-out Event Log Window (full history) -->
+  <div id="log-popout" class="popout-overlay" style="display: none;">
+    <div class="popout-window">
+      <div class="popout-header">
+        <h3>Event Log</h3>
+        <button id="close-popout" class="close-btn">&times;</button>
+      </div>
+      <div id="popout-log-entries" class="popout-content"></div>
+    </div>
   </div>
 
   <script src="/js/api.js"></script>

@@ -68,5 +68,13 @@ const api = {
 
   async submitTurn(gameId, orders) {
     return this.post(`/api/games/${gameId}/turns`, { orders });
+  },
+
+  async renamePlanet(planetId, name) {
+    return this.post(`/api/planets/${planetId}/rename`, { name });
+  },
+
+  async deleteGame(gameId) {
+    return this.delete(`/api/games/${gameId}`);
   }
 };

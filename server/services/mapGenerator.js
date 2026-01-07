@@ -1,4 +1,5 @@
 const { db } = require('../config/database');
+const { PLANET_NAMES } = require('../data/planetNames');
 
 // Mech type definitions
 const MECH_TYPES = {
@@ -7,6 +8,18 @@ const MECH_TYPES = {
   heavy: { hp: 12, cost: 4 },
   assault: { hp: 20, cost: 8 }
 };
+
+/**
+ * Shuffle an array in place using Fisher-Yates algorithm
+ */
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
 
 /**
  * Generate a game map with planets and starting positions
@@ -26,6 +39,19 @@ function generateMap(gameId, gridSize, players) {
   // Calculate target number of planets (excluding homeworlds)
   const totalTiles = gridSize * gridSize;
   const targetPlanets = Math.floor(totalTiles * PLANET_DENSITY) - players.length;
+
+  // Shuffle planet names for random assignment
+  const shuffledNames = shuffleArray(PLANET_NAMES);
+  let nameIndex = 0;
+
+  // Helper to get next planet name (with fallback for large maps)
+  function getNextPlanetName() {
+    if (nameIndex < shuffledNames.length) {
+      return shuffledNames[nameIndex++];
+    }
+    // Fallback: generate a name if we run out
+    return `Planet-${nameIndex++}`;
+  }
 
   // Helper function to calculate distance between two points
   function distance(x1, y1, x2, y2) {
@@ -116,8 +142,8 @@ function generateMap(gameId, gridSize, players) {
 
   // Insert homeworlds into database
   const insertPlanet = db.prepare(`
-    INSERT INTO planets (game_id, x, y, base_income, owner_id, is_homeworld)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO planets (game_id, x, y, base_income, owner_id, is_homeworld, name)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertBuilding = db.prepare(`
@@ -126,26 +152,28 @@ function generateMap(gameId, gridSize, players) {
   `);
 
   const insertMech = db.prepare(`
-    INSERT INTO mechs (game_id, owner_id, type, hp, max_hp, x, y)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mechs (game_id, owner_id, type, hp, max_hp, x, y, designation)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Insert homeworlds
   for (const hw of homeworlds) {
-    const result = insertPlanet.run(gameId, hw.x, hw.y, 5, hw.playerId, 1);
+    const homeworldName = getNextPlanetName();
+    const result = insertPlanet.run(gameId, hw.x, hw.y, 5, hw.playerId, 1, homeworldName);
     const planetId = result.lastInsertRowid;
 
     // Add starting factory
     insertBuilding.run(planetId, 'factory', 10);
 
-    // Add starting mechs (2 light mechs)
-    insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y);
-    insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y);
+    // Add starting mechs (2 light mechs) with designations
+    insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y, 'Light-0001');
+    insertMech.run(gameId, hw.playerId, 'light', MECH_TYPES.light.hp, MECH_TYPES.light.hp, hw.x, hw.y, 'Light-0002');
   }
 
   // Insert regular planets
   for (const planet of planets) {
-    insertPlanet.run(gameId, planet.x, planet.y, planet.income, null, 0);
+    const planetName = getNextPlanetName();
+    insertPlanet.run(gameId, planet.x, planet.y, planet.income, null, 0, planetName);
   }
 
   console.log(`Generated map for game ${gameId}: ${homeworlds.length} homeworlds, ${planets.length} planets`);

@@ -70,7 +70,7 @@ async function loadMyGames() {
             <span class="players">${game.player_count}/${game.max_players} players</span>
           </p>
         </div>
-        <div>
+        <div class="game-card-actions">
           ${game.status === 'waiting' && game.is_host ?
             `<button class="btn btn-small" onclick="startGame(${game.id})"
               ${game.player_count < 2 ? 'disabled title="Need at least 2 players"' : ''}>
@@ -80,6 +80,11 @@ async function loadMyGames() {
           <a href="/game.html?id=${game.id}" class="btn btn-primary btn-small">
             ${game.status === 'waiting' ? 'View' : 'Play'}
           </a>
+          ${game.is_host ?
+            `<button class="btn btn-danger btn-small" onclick="confirmDeleteGame(${game.id}, '${escapeHtml(game.name).replace(/'/g, "\\'")}')">
+              Delete
+            </button>` : ''
+          }
         </div>
       </div>
     `).join('');
@@ -128,6 +133,22 @@ async function startGame(gameId) {
     window.location.href = `/game.html?id=${gameId}`;
   } catch (error) {
     alert('Failed to start game: ' + error.message);
+  }
+}
+
+function confirmDeleteGame(gameId, gameName) {
+  if (confirm(`Are you sure you want to delete "${gameName}"?\n\nThis will permanently remove all game data and cannot be undone.`)) {
+    deleteGame(gameId);
+  }
+}
+
+async function deleteGame(gameId) {
+  try {
+    await api.deleteGame(gameId);
+    // Reload the games lists
+    await Promise.all([loadAvailableGames(), loadMyGames()]);
+  } catch (error) {
+    alert('Failed to delete game: ' + error.message);
   }
 }
 

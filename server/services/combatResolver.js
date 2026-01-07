@@ -191,7 +191,7 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
   const defenderCasualties = initialDefenderCount - activeDefenders.length;
 
   // Remove the side/playerId tags we added before returning
-  const cleanMech = m => ({ id: m.id, type: m.type, hp: m.hp, max_hp: m.max_hp, owner_id: m.owner_id });
+  const cleanMech = m => ({ id: m.id, type: m.type, hp: m.hp, max_hp: m.max_hp, owner_id: m.owner_id, designation: m.designation });
 
   return {
     survivingAttackers: activeAttackers.map(cleanMech),

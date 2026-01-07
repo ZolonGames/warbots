@@ -22,15 +22,15 @@ const playerColors = ['#4a9eff', '#4aff9e', '#ff4a4a', '#ffcc4a', '#ff4aff', '#4
 // Build costs
 const COSTS = {
   buildings: {
-    mining: 5,
-    factory: 10,
-    fortification: 8
+    mining: 10,
+    factory: 30,
+    fortification: 25
   },
   mechs: {
-    light: 1,
-    medium: 2,
-    heavy: 4,
-    assault: 8
+    light: 2,
+    medium: 5,
+    heavy: 12,
+    assault: 20
   }
 };
 
@@ -81,7 +81,7 @@ async function initGame(gameId) {
 
     // Set initial state
     updateMapState();
-    updateCombatLog();
+    updateEventLog();
 
     // Set up UI handlers
     setupUIHandlers();
@@ -114,20 +114,115 @@ function updatePlayerInfo() {
   document.getElementById('player-income').textContent = gameState.income;
 }
 
-function updateCombatLog() {
+function updateEventLog() {
   const logContainer = document.getElementById('log-entries');
+  const popoutContainer = document.getElementById('popout-log-entries');
 
   if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
-    logContainer.innerHTML = '<div class="log-entry log-empty">No combat this turn</div>';
+    const emptyHtml = '<div class="log-entry log-empty">No events yet</div>';
+    logContainer.innerHTML = emptyHtml;
+    if (popoutContainer) popoutContainer.innerHTML = emptyHtml;
     return;
   }
 
-  let html = '';
+  // Group events by turn number (excluding turn_start events)
+  const eventsByTurn = {};
   for (const log of gameState.combatLogs) {
-    html += formatCombatLog(log);
+    if (log.logType === 'turn_start') continue; // Skip turn_start markers
+
+    const turn = log.turnNumber;
+    if (!eventsByTurn[turn]) {
+      eventsByTurn[turn] = [];
+    }
+    eventsByTurn[turn].push(log);
+  }
+
+  // Get turns sorted in descending order (most recent first)
+  const turns = Object.keys(eventsByTurn).map(Number).sort((a, b) => b - a);
+
+  let html = '';
+
+  for (const turnNumber of turns) {
+    const turnEvents = eventsByTurn[turnNumber];
+
+    // Group events by type for this turn
+    const buildEvents = turnEvents.filter(log => log.logType === 'build_mech' || log.logType === 'build_building');
+    const incomeEvents = turnEvents.filter(log => log.logType === 'income');
+    const captureEvents = turnEvents.filter(log => log.logType === 'capture');
+    const lostEvents = turnEvents.filter(log => log.logType === 'planet_lost');
+    const battleEvents = turnEvents.filter(log => log.logType === 'battle');
+    const repairEvents = turnEvents.filter(log => log.logType === 'repair');
+
+    // Combat events first (before turn summary)
+    if (battleEvents.length > 0) {
+      html += '<div class="log-section-header">Combat Results</div>';
+      for (const log of battleEvents) {
+        html += formatEventLog(log);
+      }
+    }
+
+    // Turn summary separator
+    html += `<div class="log-separator">Start of Turn ${turnNumber + 1}</div>`;
+
+    // Income events
+    if (incomeEvents.length > 0) {
+      html += '<div class="log-section-header">Income</div>';
+      for (const log of incomeEvents) {
+        html += formatEventLog(log);
+      }
+    }
+
+    // Build events
+    if (buildEvents.length > 0) {
+      html += '<div class="log-section-header">Construction</div>';
+      for (const log of buildEvents) {
+        html += formatEventLog(log);
+      }
+    }
+
+    // Repair events
+    if (repairEvents.length > 0) {
+      html += '<div class="log-section-header">Repairs</div>';
+      for (const log of repairEvents) {
+        html += formatEventLog(log);
+      }
+    }
+
+    // Territory changes (peaceful captures and losses)
+    if (captureEvents.length > 0 || lostEvents.length > 0) {
+      html += '<div class="log-section-header">Territory Changes</div>';
+      for (const log of captureEvents) {
+        html += formatEventLog(log);
+      }
+      for (const log of lostEvents) {
+        html += formatEventLog(log);
+      }
+    }
+  }
+
+  // If no events after filtering, show empty message
+  if (html === '') {
+    html = '<div class="log-entry log-empty">No events yet</div>';
   }
 
   logContainer.innerHTML = html;
+  // Only update popout if not currently revealing events
+  if (popoutContainer && !isRevealingEvents) {
+    popoutContainer.innerHTML = html;
+  }
+}
+
+// Pop-out event log functionality
+function openEventLogPopout() {
+  const popout = document.getElementById('log-popout');
+  popout.style.display = 'flex';
+  // Sync content
+  const logContent = document.getElementById('log-entries').innerHTML;
+  document.getElementById('popout-log-entries').innerHTML = logContent;
+}
+
+function closeEventLogPopout() {
+  document.getElementById('log-popout').style.display = 'none';
 }
 
 function getPlayerName(playerId) {
@@ -149,13 +244,399 @@ function coloredPlayerName(playerId) {
   return `<span style="color: ${color}; font-weight: bold;">${name}</span>`;
 }
 
+function formatLocationWithPlanet(x, y, planet) {
+  if (planet && planet.name) {
+    // Get owner color for the planet name
+    let planetColor = '#888888'; // Default gray for neutral
+    if (planet.owner_id) {
+      planetColor = getPlayerColor(planet.owner_id);
+    }
+    return `<span style="color: ${planetColor}; font-weight: bold;">${planet.name}</span> (${x}, ${y})`;
+  }
+  // No planet at this location, just show coordinates
+  return `(${x}, ${y})`;
+}
+
+function formatEventLog(log) {
+  // Find the planet at this location (if any)
+  const planet = gameState.planets.find(p => p.x === log.x && p.y === log.y);
+
+  switch (log.logType) {
+    case 'income':
+      return formatIncomeEvent(log);
+    case 'build_mech':
+      return formatBuildMechEvent(log);
+    case 'build_building':
+      return formatBuildBuildingEvent(log);
+    case 'capture':
+      return formatCaptureEvent(log, planet);
+    case 'planet_lost':
+      return formatPlanetLostEvent(log);
+    case 'battle':
+      return formatBattleEvent(log, planet);
+    case 'repair':
+      return formatRepairEvent(log);
+    default:
+      return '';
+  }
+}
+
+function formatIncomeEvent(log) {
+  const amount = log.detailedLog?.amount || 0;
+  return `<div class="log-entry log-income">
+    <span class="log-icon">💰</span>
+    Earned <span class="credits-amount">+${amount} credits</span> from your empire
+  </div>`;
+}
+
+function formatBuildMechEvent(log) {
+  const data = log.detailedLog || {};
+  const mechType = data.mechType ? (data.mechType.charAt(0).toUpperCase() + data.mechType.slice(1)) : 'Unknown';
+  const designation = data.designation || mechType;
+  const planetName = data.planetName || 'Unknown Planet';
+  const coords = `(${data.x}, ${data.y})`;
+
+  return `<div class="log-entry log-build">
+    <span class="log-icon">🤖</span>
+    Built <span class="mech-name">${designation}</span> at <span class="planet-name">${planetName}</span> ${coords}
+  </div>`;
+}
+
+function formatBuildBuildingEvent(log) {
+  const data = log.detailedLog || {};
+  const buildingType = data.buildingType ? (data.buildingType.charAt(0).toUpperCase() + data.buildingType.slice(1)) : 'Unknown';
+  const planetName = data.planetName || 'Unknown Planet';
+  const coords = `(${data.x}, ${data.y})`;
+
+  let icon = '🏗️';
+  if (data.buildingType === 'mining') icon = '⛏️';
+  else if (data.buildingType === 'factory') icon = '🏭';
+  else if (data.buildingType === 'fortification') icon = '🏰';
+
+  return `<div class="log-entry log-build">
+    <span class="log-icon">${icon}</span>
+    Built <span class="building-name">${buildingType}</span> at <span class="planet-name">${planetName}</span> ${coords}
+  </div>`;
+}
+
+function formatCaptureEvent(log, planet) {
+  const locationText = formatLocationWithPlanet(log.x, log.y, planet);
+  return `<div class="log-entry log-capture">
+    <span class="log-icon">🚩</span>
+    ${coloredPlayerName(log.winnerId)} captured ${locationText}
+  </div>`;
+}
+
+function formatPlanetLostEvent(log) {
+  const data = log.detailedLog || {};
+  const planetName = data.planetName || 'Unknown Planet';
+  const coords = `(${data.x}, ${data.y})`;
+  const capturedBy = data.capturedBy;
+
+  return `<div class="log-entry log-lost">
+    <span class="log-icon">⚠️</span>
+    Lost <span class="planet-name">${planetName}</span> ${coords} to ${coloredPlayerName(capturedBy)}
+  </div>`;
+}
+
+function formatRepairEvent(log) {
+  const data = log.detailedLog || {};
+  const repairs = data.repairs || [];
+
+  if (repairs.length === 0) return '';
+
+  let html = '';
+  for (const repair of repairs) {
+    const designation = repair.designation || repair.mechType;
+    const planetName = repair.planetName || 'Unknown';
+
+    if (repair.fullyRepaired) {
+      html += `<div class="log-entry log-repair">
+        <span class="log-icon">🔧</span>
+        <span class="mech-name">${designation}</span> fully repaired at <span class="planet-name">${planetName}</span>
+      </div>`;
+    } else {
+      html += `<div class="log-entry log-repair">
+        <span class="log-icon">🔧</span>
+        <span class="mech-name">${designation}</span> repaired +${repair.hpGained} HP (${repair.hpAfter}/${repair.maxHp}) at <span class="planet-name">${planetName}</span>
+      </div>`;
+    }
+  }
+
+  return html;
+}
+
+// Get repair event as array of reveal items for line-by-line animation
+function getRepairRevealItems(log) {
+  const items = [];
+  const data = log.detailedLog || {};
+  const repairs = data.repairs || [];
+
+  for (const repair of repairs) {
+    const designation = repair.designation || repair.mechType;
+    const planetName = repair.planetName || 'Unknown';
+
+    let html;
+    if (repair.fullyRepaired) {
+      html = `<div class="log-entry log-repair">
+        <span class="log-icon">🔧</span>
+        <span class="mech-name">${designation}</span> fully repaired at <span class="planet-name">${planetName}</span>
+      </div>`;
+    } else {
+      html = `<div class="log-entry log-repair">
+        <span class="log-icon">🔧</span>
+        <span class="mech-name">${designation}</span> repaired +${repair.hpGained} HP (${repair.hpAfter}/${repair.maxHp}) at <span class="planet-name">${planetName}</span>
+      </div>`;
+    }
+
+    items.push({
+      type: 'event',
+      html: html
+    });
+  }
+
+  return items;
+}
+
+function formatBattleEvent(log, planet) {
+  const locationText = formatLocationWithPlanet(log.x, log.y, planet);
+  const combatants = getBattleCombatantNames(log);
+
+  let html = `<div class="log-entry log-attack">
+    <span class="log-icon">⚔️</span>
+    Battle at ${locationText} between ${combatants.name1} and ${combatants.name2}
+  </div>`;
+
+  // Detailed log for participants - handle new format with captureInfo
+  if (log.isParticipant && log.detailedLog) {
+    const battles = log.detailedLog.battles || log.detailedLog; // Support both old and new format
+    html += formatDetailedBattleLog(battles);
+  }
+
+  // Outcome summary
+  html += formatBattleOutcome(log);
+
+  // Planet capture during battle
+  const captureHtml = formatBattleCapture(log);
+  if (captureHtml) {
+    html += captureHtml;
+  }
+
+  return html;
+}
+
+// Get casualties for each participant in a battle
+function getBattleCasualties(log) {
+  // Determine which participant lost how many mechs
+  // attackerCasualties = mechs lost by attackerId
+  // defenderCasualties = mechs lost by defenderId
+  const attackerId = log.attackerId;
+  const defenderId = log.defenderId;
+  const winnerId = log.winnerId;
+
+  const casualties = {};
+
+  // Map attacker casualties to attackerId
+  if (attackerId != null) {
+    casualties[attackerId] = log.attackerCasualties || 0;
+  }
+
+  // Map defender casualties to defenderId
+  if (defenderId != null) {
+    casualties[defenderId] = log.defenderCasualties || 0;
+  }
+
+  return casualties;
+}
+
+function formatBattleOutcome(log) {
+  const winnerName = coloredPlayerName(log.winnerId);
+  const loserIds = log.participants.filter(id => id != log.winnerId);
+  const loserId = loserIds[0];
+  const loserName = loserId != null ? coloredPlayerName(loserId) : '<span style="color: #888;">Neutral forces</span>';
+
+  // Get casualties per participant
+  const casualties = getBattleCasualties(log);
+
+  // Winner's casualties
+  const winnerCasualties = casualties[log.winnerId] || 0;
+
+  // Loser's casualties
+  const loserCasualties = loserId != null ? (casualties[loserId] || 0) : 0;
+
+  return `<div class="log-entry log-outcome">
+    ${winnerName} was victorious!
+    ${winnerName} suffered ${winnerCasualties} casualt${winnerCasualties === 1 ? 'y' : 'ies'},
+    and ${loserName} suffered ${loserCasualties} casualt${loserCasualties === 1 ? 'y' : 'ies'}!
+  </div>`;
+}
+
+function formatBattleCapture(log) {
+  const captureInfo = log.detailedLog?.captureInfo;
+  if (!captureInfo) return null;
+
+  const capturerName = coloredPlayerName(captureInfo.newOwner);
+  const previousOwnerName = captureInfo.previousOwner
+    ? coloredPlayerName(captureInfo.previousOwner)
+    : '<span style="color: #888;">Neutral forces</span>';
+
+  return `<div class="log-entry log-capture-battle">
+    <span class="log-icon">🏴</span>
+    ${capturerName} has taken <span class="planet-name">${captureInfo.planetName}</span> from ${previousOwnerName}!
+  </div>`;
+}
+
+// Get the two combatant names from a battle log
+function getBattleCombatantNames(log) {
+  // If we have both attacker and defender IDs, use those
+  if (log.attackerId != null && log.defenderId != null) {
+    return {
+      name1: coloredPlayerName(log.attackerId),
+      name2: coloredPlayerName(log.defenderId)
+    };
+  }
+
+  // Otherwise, use participants list to determine combatants
+  if (log.participants && log.participants.length >= 2) {
+    return {
+      name1: coloredPlayerName(log.participants[0]),
+      name2: coloredPlayerName(log.participants[1])
+    };
+  }
+
+  // Fallback
+  const attackerName = log.attackerId != null ? coloredPlayerName(log.attackerId) : '<span style="color: #888;">Unknown</span>';
+  const defenderName = log.defenderId != null ? coloredPlayerName(log.defenderId) : '<span style="color: #888;">Neutral</span>';
+  return { name1: attackerName, name2: defenderName };
+}
+
+// Get battle event as array of reveal items for line-by-line animation
+function getBattleRevealItems(log) {
+  console.log('[BattleReveal] getBattleRevealItems called for log:', log.id, 'at', log.x, log.y);
+  const items = [];
+  const planet = gameState.planets.find(p => p.x === log.x && p.y === log.y);
+  const locationText = formatLocationWithPlanet(log.x, log.y, planet);
+  const combatants = getBattleCombatantNames(log);
+
+  // Battle header
+  const headerHtml = `<div class="log-entry log-attack">
+      <span class="log-icon">⚔️</span>
+      Battle at ${locationText} between ${combatants.name1} and ${combatants.name2}
+    </div>`;
+  console.log('[BattleReveal] Adding header:', headerHtml.substring(0, 60) + '...');
+  items.push({
+    type: 'event',
+    html: headerHtml
+  });
+
+  // Detailed battle log for participants (die rolls, damage, etc.)
+  if (log.isParticipant && log.detailedLog) {
+    const battles = log.detailedLog.battles || log.detailedLog;
+    const detailItems = getDetailedBattleRevealItems(battles);
+    console.log('[BattleReveal] Adding', detailItems.length, 'detail items');
+    for (const item of detailItems) {
+      items.push(item);
+    }
+  }
+
+  // Outcome
+  const outcomeHtml = formatBattleOutcome(log);
+  console.log('[BattleReveal] Adding outcome:', outcomeHtml.substring(0, 60) + '...');
+  items.push({
+    type: 'event',
+    html: outcomeHtml
+  });
+
+  // Planet capture (if any)
+  const captureHtml = formatBattleCapture(log);
+  if (captureHtml) {
+    console.log('[BattleReveal] Adding capture:', captureHtml.substring(0, 60) + '...');
+    items.push({
+      type: 'event',
+      html: captureHtml
+    });
+  }
+
+  console.log('[BattleReveal] Returning', items.length, 'items');
+  return items;
+}
+
+// Get detailed battle log entries as individual reveal items
+function getDetailedBattleRevealItems(battles) {
+  const items = [];
+
+  for (const battle of battles) {
+    if (!battle.detailedLog) continue;
+
+    for (const entry of battle.detailedLog) {
+      let html = '';
+
+      if (entry.type === 'round') {
+        html = `<div class="log-detail-item log-round">--- Round ${entry.round} ---</div>`;
+      } else if (entry.type === 'attack') {
+        const attackerType = entry.attackerType || 'unknown';
+        const targetType = entry.targetType || 'unknown';
+        const attackerName = coloredPlayerName(entry.attackerPlayerId);
+        const attackerTypeName = attackerType.charAt(0).toUpperCase() + attackerType.slice(1);
+        const targetName = targetType === 'fortification' ? 'Fortification' : coloredPlayerName(entry.targetPlayerId);
+        const targetTypeName = targetType.charAt(0).toUpperCase() + targetType.slice(1);
+
+        if (attackerType === 'fortification') {
+          html = `<div class="log-detail-item log-roll">Fortification attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
+        } else if (targetType === 'fortification') {
+          html = `<div class="log-detail-item log-roll">${attackerName}'s ${attackerTypeName} attacks Fortification → rolls ${entry.roll}</div>`;
+        } else {
+          html = `<div class="log-detail-item log-roll">${attackerName}'s ${attackerTypeName} attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
+        }
+      } else if (entry.type === 'roll') {
+        // Legacy roll format
+        const mechType = entry.mechType || 'unknown';
+        const playerName = coloredPlayerName(entry.playerId);
+        const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
+        html = `<div class="log-detail-item log-roll">${playerName}'s ${mechName} rolls ${entry.roll}</div>`;
+      } else if (entry.type === 'damage') {
+        const mechType = entry.mechType || entry.target || 'unknown';
+        if (mechType === 'fortification') {
+          html = `<div class="log-detail-item log-damage">Fortification takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
+        } else {
+          const playerName = coloredPlayerName(entry.playerId);
+          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
+          html = `<div class="log-detail-item log-damage">${playerName}'s ${mechName} takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
+        }
+      } else if (entry.type === 'destroyed') {
+        const mechType = entry.mechType || entry.target || 'unknown';
+        if (mechType === 'fortification') {
+          html = `<div class="log-detail-item log-destroyed">Fortification destroyed!</div>`;
+        } else {
+          const playerName = coloredPlayerName(entry.playerId);
+          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
+          html = `<div class="log-detail-item log-destroyed">${playerName}'s ${mechName} destroyed!</div>`;
+        }
+      }
+
+      if (html) {
+        items.push({
+          type: 'detail',
+          html: html
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
 function formatCombatLog(log) {
   let html = '';
+
+  // Find the planet at this location (if any)
+  const planet = gameState.planets.find(p => p.x === log.x && p.y === log.y);
+  const locationText = formatLocationWithPlanet(log.x, log.y, planet);
 
   if (log.logType === 'capture') {
     // Peaceful capture
     html += `<div class="log-entry log-capture">`;
-    html += `${coloredPlayerName(log.winnerId)} captured planet at (${log.x}, ${log.y})`;
+    html += `${coloredPlayerName(log.winnerId)} captured ${locationText}`;
     html += `</div>`;
   } else if (log.logType === 'battle') {
     // Battle occurred
@@ -163,7 +644,7 @@ function formatCombatLog(log) {
     const defenderName = log.defenderId ? coloredPlayerName(log.defenderId) : '<span style="color: #888;">Neutral</span>';
 
     html += `<div class="log-entry log-attack">`;
-    html += `A battle occurred at (${log.x}, ${log.y}) between ${attackerName} and ${defenderName}`;
+    html += `A battle occurred at ${locationText} between ${attackerName} and ${defenderName}`;
     html += `</div>`;
 
     // Detailed log for participants
@@ -194,42 +675,49 @@ function formatDetailedBattleLog(battles) {
   let html = '<div class="log-detailed">';
 
   for (const battle of battles) {
+    if (!battle.detailedLog) continue;
+
     for (const entry of battle.detailedLog) {
       if (entry.type === 'round') {
         html += `<div class="log-round">--- Round ${entry.round} ---</div>`;
       } else if (entry.type === 'attack') {
         // New attack format: shows attacker, target, and roll
+        const attackerType = entry.attackerType || 'unknown';
+        const targetType = entry.targetType || 'unknown';
         const attackerName = coloredPlayerName(entry.attackerPlayerId);
-        const attackerType = entry.attackerType.charAt(0).toUpperCase() + entry.attackerType.slice(1);
-        const targetName = entry.targetType === 'fortification' ? 'Fortification' : coloredPlayerName(entry.targetPlayerId);
-        const targetType = entry.targetType.charAt(0).toUpperCase() + entry.targetType.slice(1);
+        const attackerTypeName = attackerType.charAt(0).toUpperCase() + attackerType.slice(1);
+        const targetName = targetType === 'fortification' ? 'Fortification' : coloredPlayerName(entry.targetPlayerId);
+        const targetTypeName = targetType.charAt(0).toUpperCase() + targetType.slice(1);
 
-        if (entry.attackerType === 'fortification') {
-          html += `<div class="log-roll">Fortification attacks ${targetName}'s ${targetType} → rolls ${entry.roll}</div>`;
-        } else if (entry.targetType === 'fortification') {
-          html += `<div class="log-roll">${attackerName}'s ${attackerType} attacks Fortification → rolls ${entry.roll}</div>`;
+        if (attackerType === 'fortification') {
+          html += `<div class="log-roll">Fortification attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
+        } else if (targetType === 'fortification') {
+          html += `<div class="log-roll">${attackerName}'s ${attackerTypeName} attacks Fortification → rolls ${entry.roll}</div>`;
         } else {
-          html += `<div class="log-roll">${attackerName}'s ${attackerType} attacks ${targetName}'s ${targetType} → rolls ${entry.roll}</div>`;
+          html += `<div class="log-roll">${attackerName}'s ${attackerTypeName} attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
         }
       } else if (entry.type === 'roll') {
         // Legacy roll format (kept for backwards compatibility)
+        const mechType = entry.mechType || 'unknown';
         const playerName = coloredPlayerName(entry.playerId);
-        const mechName = entry.mechType.charAt(0).toUpperCase() + entry.mechType.slice(1);
+        const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
         html += `<div class="log-roll">${playerName}'s ${mechName} rolls ${entry.roll}</div>`;
       } else if (entry.type === 'damage') {
-        if (entry.mechType === 'fortification') {
+        const mechType = entry.mechType || entry.target || 'unknown';
+        if (mechType === 'fortification') {
           html += `<div class="log-damage">Fortification takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
         } else {
           const playerName = coloredPlayerName(entry.playerId);
-          const mechName = entry.mechType.charAt(0).toUpperCase() + entry.mechType.slice(1);
+          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
           html += `<div class="log-damage">${playerName}'s ${mechName} takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
         }
       } else if (entry.type === 'destroyed') {
-        if (entry.mechType === 'fortification') {
+        const mechType = entry.mechType || entry.target || 'unknown';
+        if (mechType === 'fortification') {
           html += `<div class="log-destroyed">Fortification destroyed!</div>`;
         } else {
           const playerName = coloredPlayerName(entry.playerId);
-          const mechName = entry.mechType.charAt(0).toUpperCase() + entry.mechType.slice(1);
+          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
           html += `<div class="log-destroyed">${playerName}'s ${mechName} destroyed!</div>`;
         }
       }
@@ -305,8 +793,9 @@ function handleTileHover(tile, event) {
 
   let html = '';
   if (planet) {
-    html += `<strong>${planet.is_homeworld ? 'Homeworld' : 'Planet'}</strong><br>`;
-    html += `Income: ${planet.base_income}<br>`;
+    const planetName = planet.name || (planet.is_homeworld ? 'Homeworld' : 'Planet');
+    html += `<strong>${planetName}</strong><br>`;
+    html += `${planet.is_homeworld ? 'Homeworld' : 'Planet'} - Income: ${planet.base_income}<br>`;
     if (planet.buildings && planet.buildings.length > 0) {
       html += `Buildings: ${planet.buildings.map(b => b.type).join(', ')}`;
     }
@@ -337,9 +826,22 @@ function updateSelectionPanel(selection) {
   let html = `<p><strong>Position:</strong> (${tile.x}, ${tile.y})</p>`;
 
   if (planet) {
-    html += `<p><strong>${planet.is_homeworld ? 'Homeworld' : 'Planet'}</strong></p>`;
+    // Planet name with rename option for owned planets
+    const planetName = planet.name || (planet.is_homeworld ? 'Homeworld' : 'Unknown Planet');
+    const isOwned = planet.owner_id === playerId;
+
+    if (isOwned) {
+      html += `<div class="planet-name-container">`;
+      html += `<p class="planet-name"><strong>${planetName}</strong></p>`;
+      html += `<button class="rename-btn" onclick="showRenameDialog(${planet.id}, '${planetName.replace(/'/g, "\\'")}')">Rename</button>`;
+      html += `</div>`;
+    } else {
+      html += `<p class="planet-name"><strong>${planetName}</strong></p>`;
+    }
+
+    html += `<p class="planet-type">${planet.is_homeworld ? 'Homeworld' : 'Planet'}</p>`;
     html += `<p>Income: ${planet.base_income}</p>`;
-    html += `<p>Owner: ${planet.owner_id === playerId ? 'You' : (planet.owner_id ? 'Enemy' : 'Neutral')}</p>`;
+    html += `<p>Owner: ${isOwned ? 'You' : (planet.owner_id ? 'Enemy' : 'Neutral')}</p>`;
 
     if (planet.buildings && planet.buildings.length > 0) {
       html += '<p><strong>Buildings:</strong></p><ul>';
@@ -350,7 +852,7 @@ function updateSelectionPanel(selection) {
     }
 
     // Show build panel if we own this planet
-    if (planet.owner_id === playerId) {
+    if (isOwned) {
       buildPanel.style.display = 'block';
       updateBuildButtons(planet);
     } else {
@@ -377,6 +879,37 @@ function updateSelectionPanel(selection) {
   panel.innerHTML = html;
 }
 
+// Show rename dialog for a planet
+function showRenameDialog(planetId, currentName) {
+  const newName = prompt('Enter new name for this planet:', currentName);
+  if (newName !== null && newName.trim() !== '' && newName.trim() !== currentName) {
+    renamePlanet(planetId, newName.trim());
+  }
+}
+
+// Rename a planet via API
+async function renamePlanet(planetId, newName) {
+  try {
+    await api.renamePlanet(planetId, newName);
+
+    // Update the planet name in local game state
+    const planet = gameState.planets.find(p => p.id === planetId);
+    if (planet) {
+      planet.name = newName;
+    }
+
+    // Refresh the selection panel
+    if (gameMap && gameMap.selectedTile) {
+      const tile = gameMap.selectedTile;
+      const selectedPlanet = gameState.planets.find(p => p.x === tile.x && p.y === tile.y);
+      const mechs = gameState.mechs.filter(m => m.x === tile.x && m.y === tile.y);
+      updateSelectionPanel({ tile, planet: selectedPlanet, mechs });
+    }
+  } catch (error) {
+    alert('Failed to rename planet: ' + error.message);
+  }
+}
+
 function updateBuildButtons(planet) {
   const hasFactory = planet.buildings && planet.buildings.some(b => b.type === 'factory');
   const existingBuildings = new Set((planet.buildings || []).map(b => b.type));
@@ -389,15 +922,42 @@ function updateBuildButtons(planet) {
   );
 
   // Check if a mech is already queued for this planet (factories can only build 1 mech per turn)
-  const mechQueuedForPlanet = pendingOrders.builds.some(
+  const queuedMech = pendingOrders.builds.find(
     b => b.planetId === planet.id && b.type === 'mech'
   );
+
+  // Handle mech manufacturing display
+  const mechButtonsContainer = document.getElementById('mech-buttons');
+  const manufacturingBtn = document.getElementById('mech-manufacturing');
+  const noFactoryBtn = document.getElementById('mech-no-factory');
+
+  if (!hasFactory) {
+    // No factory - show "build a factory" message
+    mechButtonsContainer.style.display = 'none';
+    manufacturingBtn.style.display = 'none';
+    noFactoryBtn.style.display = 'flex';
+  } else if (queuedMech) {
+    // Show manufacturing button, hide individual mech buttons
+    mechButtonsContainer.style.display = 'none';
+    manufacturingBtn.style.display = 'flex';
+    noFactoryBtn.style.display = 'none';
+    const mechType = queuedMech.mechType.charAt(0).toUpperCase() + queuedMech.mechType.slice(1);
+    manufacturingBtn.querySelector('.build-name').textContent = `Manufacturing ${mechType} Mech`;
+  } else {
+    // Show individual mech buttons, hide other states
+    mechButtonsContainer.style.display = 'block';
+    manufacturingBtn.style.display = 'none';
+    noFactoryBtn.style.display = 'none';
+  }
 
   document.querySelectorAll('.build-btn').forEach(btn => {
     const type = btn.dataset.type;
     const buildType = btn.dataset.build;
     const cost = parseInt(btn.dataset.cost, 10);
     const statusEl = btn.querySelector('.build-status');
+
+    // Skip the manufacturing button (it has no dataset)
+    if (!type) return;
 
     // Reset classes
     btn.classList.remove('already-built', 'no-credits', 'no-factory', 'queued');
@@ -421,17 +981,8 @@ function updateBuildButtons(planet) {
         statusEl.textContent = `(${cost})`;
       }
     } else if (type === 'mech') {
-      // Mechs require an existing factory (queued factories don't count)
-      if (!hasFactory) {
-        btn.disabled = true;
-        btn.classList.add('no-factory');
-        statusEl.textContent = 'Requires Factory';
-      } else if (mechQueuedForPlanet) {
-        // Factory can only produce 1 mech per turn
-        btn.disabled = true;
-        btn.classList.add('queued');
-        statusEl.textContent = '1 per turn';
-      } else if (displayedCredits < cost) {
+      // Mech buttons are only shown when factory exists (no-factory state handled above)
+      if (displayedCredits < cost) {
         btn.disabled = true;
         btn.classList.add('no-credits');
         statusEl.textContent = 'Not enough credits!';
@@ -474,6 +1025,23 @@ function setupUIHandlers() {
   document.getElementById('zoom-out').addEventListener('click', () => gameMap.zoomOut());
   document.getElementById('reset-view').addEventListener('click', () => gameMap.resetView());
 
+  // Event log pop-out
+  document.getElementById('popout-log').addEventListener('click', openEventLogPopout);
+  document.getElementById('close-popout').addEventListener('click', closeEventLogPopout);
+
+  // Close popout when clicking overlay background
+  document.getElementById('log-popout').addEventListener('click', (e) => {
+    if (e.target.id === 'log-popout') {
+      closeEventLogPopout();
+    }
+  });
+
+  // Turn Summary handlers
+  document.getElementById('start-turn-btn').addEventListener('click', closeTurnSummary);
+  document.getElementById('turn-summary-entries').addEventListener('click', () => {
+    skipEventReveal();
+  });
+
   // Set up drag-and-drop for mechs from sidebar
   setupMapDropZone();
 }
@@ -504,8 +1072,25 @@ function addBuildOrder(planetId, type, buildType) {
 function addMoveOrder(mechId, toX, toY) {
   // Remove any existing move order for this mech
   pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== mechId);
-  pendingOrders.moves.push({ mechId, toX, toY });
+
+  // Find the mech to get its current position
+  const mech = gameState.mechs.find(m => m.id === mechId);
+  const fromX = mech ? mech.x : 0;
+  const fromY = mech ? mech.y : 0;
+
+  pendingOrders.moves.push({ mechId, toX, toY, fromX, fromY });
   updateOrdersList();
+  refreshMechsPanel();
+}
+
+function refreshMechsPanel() {
+  // Refresh mechs panel to show updated move orders
+  if (gameMap && gameMap.selectedTile) {
+    const tile = gameMap.selectedTile;
+    const mechs = gameState.mechs.filter(m => m.x === tile.x && m.y === tile.y);
+    const yourMechs = mechs.filter(m => m.owner_id === playerId);
+    updateMechsPanel(yourMechs.length > 0 ? { tile, mechs: yourMechs } : null);
+  }
 }
 
 function updateOrdersList() {
@@ -520,9 +1105,10 @@ function updateOrdersList() {
 
   for (let i = 0; i < pendingOrders.moves.length; i++) {
     const order = pendingOrders.moves[i];
+    const orderText = formatMoveOrder(order);
     html += `
       <div class="order-item">
-        <span>Move mech to (${order.toX}, ${order.toY})</span>
+        <span>${orderText}</span>
         <button class="order-remove" onclick="removeOrder('moves', ${i})">×</button>
       </div>
     `;
@@ -530,16 +1116,61 @@ function updateOrdersList() {
 
   for (let i = 0; i < pendingOrders.builds.length; i++) {
     const order = pendingOrders.builds[i];
-    const buildName = order.mechType || order.buildingType;
+    const orderText = formatBuildOrder(order);
     html += `
       <div class="order-item">
-        <span>Build ${buildName}</span>
+        <span>${orderText}</span>
         <button class="order-remove" onclick="removeOrder('builds', ${i})">×</button>
       </div>
     `;
   }
 
   container.innerHTML = html;
+}
+
+// Format a move order with mech name and location details
+function formatMoveOrder(order) {
+  // Find the mech
+  const mech = gameState.mechs.find(m => m.id === order.mechId);
+  const mechName = mech ? (mech.designation || mech.type) : 'Mech';
+
+  // Check for planets at source and destination
+  const fromPlanet = gameState.planets.find(p => p.x === order.fromX && p.y === order.fromY);
+  const toPlanet = gameState.planets.find(p => p.x === order.toX && p.y === order.toY);
+
+  // Format source location
+  let fromText;
+  if (fromPlanet && fromPlanet.name) {
+    fromText = `${fromPlanet.name} (${order.fromX}, ${order.fromY})`;
+  } else {
+    fromText = `(${order.fromX}, ${order.fromY})`;
+  }
+
+  // Format destination location
+  let toText;
+  if (toPlanet && toPlanet.name) {
+    toText = `${toPlanet.name} (${order.toX}, ${order.toY})`;
+  } else {
+    toText = `(${order.toX}, ${order.toY})`;
+  }
+
+  return `Moving ${mechName} from ${fromText} to ${toText}`;
+}
+
+// Format a build order with planet name
+function formatBuildOrder(order) {
+  // Find the planet
+  const planet = gameState.planets.find(p => p.id === order.planetId);
+  const planetName = planet ? (planet.name || 'Unknown') : 'Unknown';
+  const coords = planet ? `(${planet.x}, ${planet.y})` : '';
+
+  if (order.type === 'mech') {
+    const mechType = order.mechType.charAt(0).toUpperCase() + order.mechType.slice(1);
+    return `Manufacturing ${mechType} Mech on ${planetName} ${coords}`;
+  } else {
+    const buildingType = order.buildingType.charAt(0).toUpperCase() + order.buildingType.slice(1);
+    return `Building ${buildingType} on ${planetName} ${coords}`;
+  }
 }
 
 function removeOrder(type, index) {
@@ -561,6 +1192,11 @@ function removeOrder(type, index) {
   }
 
   updateOrdersList();
+
+  // Refresh mechs panel if a move order was removed
+  if (type === 'moves') {
+    refreshMechsPanel();
+  }
 }
 
 function clearOrders() {
@@ -574,6 +1210,7 @@ function clearOrders() {
 
   pendingOrders = { moves: [], builds: [] };
   updateOrdersList();
+  refreshMechsPanel();
 }
 
 async function submitTurn() {
@@ -616,10 +1253,200 @@ function showTurnAnnouncement(turnNumber) {
   // Trigger animation
   overlay.classList.add('active');
 
-  // Remove after animation completes
+  // Remove after animation completes, then show turn summary
   setTimeout(() => {
     overlay.classList.remove('active');
+    // Start the animated turn summary after turn announcement
+    showTurnSummary(turnNumber - 1); // Show events from the previous turn that just resolved
   }, 2500);
+}
+
+// Animated event log reveal system
+let eventRevealQueue = [];
+let isRevealingEvents = false;
+
+function showTurnSummary(turnNumber) {
+  console.log('[TurnSummary] Starting showTurnSummary for turn', turnNumber);
+
+  if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
+    console.log('[TurnSummary] No combat logs, returning');
+    return;
+  }
+
+  // Get events for this specific turn (the turn that just resolved)
+  const turnEvents = gameState.combatLogs.filter(log =>
+    log.turnNumber === turnNumber && log.logType !== 'turn_start'
+  );
+
+  console.log('[TurnSummary] Found turnEvents:', turnEvents.length, turnEvents);
+
+  if (turnEvents.length === 0) {
+    console.log('[TurnSummary] No events for this turn, returning');
+    return;
+  }
+
+  // Open the turn summary popup
+  const overlay = document.getElementById('turn-summary-overlay');
+  overlay.style.display = 'flex';
+
+  // Update the Start Turn button text
+  const startBtn = document.getElementById('start-turn-btn');
+  startBtn.textContent = `Start Turn ${turnNumber + 1}`;
+
+  // Clear the summary content for fresh reveal
+  const summaryContainer = document.getElementById('turn-summary-entries');
+  summaryContainer.innerHTML = '';
+  summaryContainer.classList.add('revealing');
+
+  // Build the event queue in the correct order:
+  // 1. Combat events first
+  // 2. "Start of Turn X" separator
+  // 3. Income, Construction, Territory Changes (peaceful captures)
+  eventRevealQueue = [];
+
+  const battleEvents = turnEvents.filter(log => log.logType === 'battle');
+  const incomeEvents = turnEvents.filter(log => log.logType === 'income');
+  const buildEvents = turnEvents.filter(log => log.logType === 'build_mech' || log.logType === 'build_building');
+  const repairEvents = turnEvents.filter(log => log.logType === 'repair');
+  const captureEvents = turnEvents.filter(log => log.logType === 'capture');
+  const lostEvents = turnEvents.filter(log => log.logType === 'planet_lost');
+
+  // Add combat section - each battle line-by-line
+  if (battleEvents.length > 0) {
+    console.log('[TurnSummary] Processing', battleEvents.length, 'battle events');
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Combat Results</div>' });
+    for (const log of battleEvents) {
+      // Get battle items for line-by-line reveal
+      console.log('[TurnSummary] Getting battle reveal items for log:', log);
+      const battleItems = getBattleRevealItems(log);
+      console.log('[TurnSummary] Got', battleItems.length, 'battle items:', battleItems);
+      for (const item of battleItems) {
+        eventRevealQueue.push(item);
+      }
+    }
+  }
+
+  // Add turn summary separator
+  eventRevealQueue.push({ type: 'separator', html: `<div class="log-separator">Start of Turn ${turnNumber + 1}</div>` });
+
+  // Add income section
+  if (incomeEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Income</div>' });
+    for (const log of incomeEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+  }
+
+  // Add construction section
+  if (buildEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Construction</div>' });
+    for (const log of buildEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+  }
+
+  // Add repairs section - each repair line by line
+  if (repairEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Repairs</div>' });
+    for (const log of repairEvents) {
+      const repairItems = getRepairRevealItems(log);
+      for (const item of repairItems) {
+        eventRevealQueue.push(item);
+      }
+    }
+  }
+
+  // Add territory changes (peaceful captures and losses)
+  if (captureEvents.length > 0 || lostEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Territory Changes</div>' });
+    for (const log of captureEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+    for (const log of lostEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+  }
+
+  // Start revealing events
+  console.log('[TurnSummary] Final queue length:', eventRevealQueue.length, eventRevealQueue);
+  isRevealingEvents = true;
+  revealNextEvent();
+}
+
+function revealNextEvent() {
+  console.log('[RevealNext] Called, queue length:', eventRevealQueue.length);
+
+  if (eventRevealQueue.length === 0) {
+    console.log('[RevealNext] Queue empty, finishing');
+    isRevealingEvents = false;
+    const summaryContainer = document.getElementById('turn-summary-entries');
+    summaryContainer.classList.remove('revealing');
+    // Also update the main event log (non-animated)
+    updateEventLog();
+    return;
+  }
+
+  const summaryContainer = document.getElementById('turn-summary-entries');
+  const item = eventRevealQueue.shift();
+  console.log('[RevealNext] Processing item:', item.type, item.html.substring(0, 50) + '...');
+
+  // Create a wrapper div for animation
+  const wrapper = document.createElement('div');
+  wrapper.className = 'reveal-item';
+  wrapper.innerHTML = item.html;
+  summaryContainer.appendChild(wrapper);
+
+  // Scroll to bottom
+  summaryContainer.scrollTop = summaryContainer.scrollHeight;
+
+  // Trigger fade-in animation
+  requestAnimationFrame(() => {
+    wrapper.classList.add('revealed');
+  });
+
+  // Determine delay based on item type
+  let delay = 300; // Default for headers
+  if (item.type === 'event') {
+    delay = 800; // Pause for actual events
+  } else if (item.type === 'separator') {
+    delay = 800; // Pause for separators
+  } else if (item.type === 'detail') {
+    delay = 800; // Battle details (die rolls, damage, etc.)
+  }
+
+  console.log('[RevealNext] Scheduling next reveal in', delay, 'ms');
+  setTimeout(revealNextEvent, delay);
+}
+
+function skipEventReveal() {
+  if (!isRevealingEvents) return;
+
+  // Clear the queue and show all remaining events at once
+  const summaryContainer = document.getElementById('turn-summary-entries');
+
+  for (const item of eventRevealQueue) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'reveal-item revealed';
+    wrapper.innerHTML = item.html;
+    summaryContainer.appendChild(wrapper);
+  }
+
+  eventRevealQueue = [];
+  isRevealingEvents = false;
+  summaryContainer.classList.remove('revealing');
+  summaryContainer.scrollTop = summaryContainer.scrollHeight;
+
+  // Update the main event log
+  updateEventLog();
+}
+
+function closeTurnSummary() {
+  const overlay = document.getElementById('turn-summary-overlay');
+  overlay.style.display = 'none';
+  // Skip any remaining reveal
+  if (isRevealingEvents) {
+    skipEventReveal();
+  }
 }
 
 function startTurnTimer(deadline) {
@@ -678,7 +1505,8 @@ async function refreshGameState(gameId) {
     document.getElementById('turn-number').textContent = gameState.currentTurn;
     updatePlayerInfo();
     updateMapState();
-    updateCombatLog();
+    updateEventLog();
+    refreshMechsPanel();
 
     // Hide waiting indicator on new turn
     showWaitingIndicator(false);
@@ -734,11 +1562,60 @@ function createMechItem(mech, tile) {
 
   item.appendChild(canvas);
 
-  // Type label
+  // Info container (type + HP)
+  const infoContainer = document.createElement('div');
+  infoContainer.className = 'mech-info';
+
+  // Designation label (e.g., "Light-0001")
   const typeLabel = document.createElement('span');
   typeLabel.className = 'mech-type';
-  typeLabel.textContent = mech.type.charAt(0).toUpperCase();
-  item.appendChild(typeLabel);
+  typeLabel.textContent = mech.designation || (mech.type.charAt(0).toUpperCase() + mech.type.slice(1));
+  infoContainer.appendChild(typeLabel);
+
+  // HP text
+  const hpPercent = mech.hp / mech.max_hp;
+  let hpColor;
+  if (hpPercent > 0.5) {
+    hpColor = 'var(--accent-green)';
+  } else if (hpPercent > 0.25) {
+    hpColor = 'var(--accent-yellow)';
+  } else {
+    hpColor = 'var(--accent-red)';
+  }
+
+  const hpText = document.createElement('span');
+  hpText.className = 'mech-hp-text';
+  hpText.textContent = `HP: ${mech.hp}/${mech.max_hp}`;
+  hpText.style.color = hpColor;
+  infoContainer.appendChild(hpText);
+
+  // Health bar
+  const healthBar = document.createElement('div');
+  healthBar.className = 'mech-health-bar';
+
+  const healthFill = document.createElement('div');
+  healthFill.className = 'mech-health-fill';
+  healthFill.style.width = `${hpPercent * 100}%`;
+  healthFill.style.backgroundColor = hpColor;
+
+  const healthLost = document.createElement('div');
+  healthLost.className = 'mech-health-lost';
+  healthLost.style.width = `${(1 - hpPercent) * 100}%`;
+
+  healthBar.appendChild(healthFill);
+  healthBar.appendChild(healthLost);
+  infoContainer.appendChild(healthBar);
+
+  // Check for pending move order
+  const moveOrder = pendingOrders.moves.find(m => m.mechId === mech.id);
+  if (moveOrder) {
+    const moveText = document.createElement('span');
+    moveText.className = 'mech-move-text';
+    moveText.textContent = `Moving to (${moveOrder.toX}, ${moveOrder.toY})`;
+    infoContainer.appendChild(moveText);
+  }
+
+  item.appendChild(infoContainer);
 
   // Set up drag events
   item.draggable = true;

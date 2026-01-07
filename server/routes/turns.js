@@ -140,13 +140,13 @@ function validateOrders(orders, player, game) {
   // Calculate total build cost
   let totalCost = 0;
   const COSTS = {
-    mining: 5,
-    factory: 10,
-    fortification: 8,
-    light: 1,
-    medium: 2,
-    heavy: 4,
-    assault: 8
+    mining: 10,
+    factory: 30,
+    fortification: 25,
+    light: 2,
+    medium: 5,
+    heavy: 12,
+    assault: 20
   };
 
   // Track planets that already have a mech order (1 mech per factory per turn)
