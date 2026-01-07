@@ -19,6 +19,10 @@
         <span class="income">Income: +<span id="player-income">0</span>/turn</span>
       </div>
       <div class="actions">
+        <div id="waiting-indicator" class="waiting-indicator" style="display: none;">
+          <span class="waiting-spinner"></span>
+          <span>Waiting for other players...</span>
+        </div>
         <button id="submit-turn" class="btn btn-primary">Submit Turn</button>
         <a href="/lobby.html" class="btn btn-secondary">Leave Game</a>
       </div>
@@ -32,6 +36,12 @@
             <p class="empty">No orders queued</p>
           </div>
           <button id="clear-orders" class="btn btn-small">Clear All</button>
+        </section>
+
+        <section class="mechs-panel" id="mechs-panel" style="display: none;">
+          <h3>Your Mechs</h3>
+          <p class="mech-help">Drag mechs to move them</p>
+          <div id="mechs-list"></div>
         </section>
       </aside>
 

@@ -42,10 +42,13 @@ class GameMap {
     this.visibleTiles = new Set();
     this.selectedTile = null;
     this.hoveredTile = null;
+    this.playerId = null; // Set by game.js to identify player's mechs
 
     // Event handlers
     this.onTileClick = null;
     this.onTileHover = null;
+    this.onMechDragStart = null; // Called when starting to drag mechs on map
+    this.onMechDragEnd = null;   // Called when ending mech drag
 
     this.setupCanvas();
     this.setupEvents();
@@ -102,6 +105,35 @@ class GameMap {
 
   // Mouse handlers
   handleMouseDown(e) {
+    if (e.button === 0) { // Left click only for mech drag check
+      const tile = this.getTileFromMouse(e);
+
+      // Check if clicking on player's mechs
+      if (tile && this.playerId !== null) {
+        const playerMechs = this.mechs.filter(m =>
+          m.x === tile.x && m.y === tile.y && m.owner_id === this.playerId
+        );
+
+        if (playerMechs.length > 0) {
+          // Start mech drag instead of pan
+          this.isDraggingMechOnMap = true;
+          this.mechDragStartTile = tile;
+          this.mechDragMechs = playerMechs;
+          this.dragStartX = e.clientX;
+          this.dragStartY = e.clientY;
+
+          // Notify game.js
+          if (this.onMechDragStart) {
+            this.onMechDragStart(tile, playerMechs);
+          }
+
+          this.canvas.style.cursor = 'grabbing';
+          return; // Don't start pan drag
+        }
+      }
+    }
+
+    // Default: pan drag
     if (e.button === 0 || e.button === 1 || e.button === 2) {
       this.isDragging = true;
       this.dragStartX = e.clientX;
@@ -113,6 +145,27 @@ class GameMap {
   }
 
   handleMouseUp(e) {
+    // Handle mech drag end
+    if (this.isDraggingMechOnMap) {
+      const tile = this.getTileFromMouse(e);
+      const dragDistance = Math.sqrt(
+        Math.pow(e.clientX - this.dragStartX, 2) +
+        Math.pow(e.clientY - this.dragStartY, 2)
+      );
+
+      // Only complete drag if moved significantly
+      if (tile && dragDistance >= 5 && this.onMechDragEnd) {
+        this.onMechDragEnd(this.mechDragStartTile, tile, this.mechDragMechs);
+      }
+
+      this.isDraggingMechOnMap = false;
+      this.mechDragStartTile = null;
+      this.mechDragMechs = null;
+      this.setDragState(false);
+      this.canvas.style.cursor = 'default';
+      return;
+    }
+
     const wasDragging = this.isDragging;
     const dragDistance = Math.sqrt(
       Math.pow(e.clientX - this.dragStartX, 2) +
@@ -129,6 +182,16 @@ class GameMap {
   }
 
   handleMouseMove(e) {
+    // Handle mech drag movement - update hovered tile for highlighting
+    if (this.isDraggingMechOnMap) {
+      const tile = this.getTileFromMouse(e);
+      if (tile) {
+        this.hoveredTile = tile;
+        this.render();
+      }
+      return;
+    }
+
     if (this.isDragging) {
       const dx = e.clientX - this.dragStartX;
       const dy = e.clientY - this.dragStartY;
@@ -149,6 +212,15 @@ class GameMap {
     this.isDragging = false;
     this.hoveredTile = null;
     this.canvas.style.cursor = 'default';
+
+    // Cancel mech drag if leaving canvas
+    if (this.isDraggingMechOnMap) {
+      this.isDraggingMechOnMap = false;
+      this.mechDragStartTile = null;
+      this.mechDragMechs = null;
+      this.setDragState(false);
+    }
+
     this.render();
   }
 
@@ -421,6 +493,9 @@ class GameMap {
       }
     }
 
+    // Draw move highlights during mech drag
+    this.drawMoveHighlights();
+
     // Draw selection highlight
     if (this.selectedTile) {
       const px = this.panX + this.selectedTile.x * tileSize;
@@ -486,19 +561,126 @@ class GameMap {
     const px = this.panX + mech.x * tileSize;
     const py = this.panY + mech.y * tileSize;
 
-    // Mech indicator in corner
-    const size = tileSize * 0.3;
     const color = this.colors.planetOwned[mech.owner_id % this.colors.planetOwned.length];
 
-    ctx.fillStyle = color;
-    ctx.fillRect(px + 2, py + 2, size, size);
+    // Draw mech icon (robot shape)
+    this.drawMechIcon(ctx, px + tileSize * 0.5, py + tileSize * 0.5, tileSize * 0.35, color);
 
     // Show mech count if multiple - only when zoomed in enough
     if (mech.count > 1 && tileSize >= 16) {
       ctx.fillStyle = '#ffffff';
-      ctx.font = `${Math.floor(tileSize * 0.4)}px sans-serif`;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.font = `bold ${Math.floor(tileSize * 0.35)}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(mech.count.toString(), px + tileSize / 2, py + tileSize - 3);
+      ctx.textBaseline = 'middle';
+
+      // Draw count badge
+      const badgeX = px + tileSize * 0.8;
+      const badgeY = py + tileSize * 0.2;
+      const badgeRadius = tileSize * 0.18;
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(mech.count.toString(), badgeX, badgeY);
     }
+  }
+
+  drawMechIcon(ctx, centerX, centerY, size, color) {
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.max(1, size * 0.08);
+
+    // Robot body
+    const bodyWidth = size * 0.7;
+    const bodyHeight = size * 0.8;
+    const bodyX = centerX - bodyWidth / 2;
+    const bodyY = centerY - bodyHeight / 2 + size * 0.1;
+
+    // Main body (rounded rect)
+    ctx.beginPath();
+    const radius = size * 0.15;
+    ctx.moveTo(bodyX + radius, bodyY);
+    ctx.lineTo(bodyX + bodyWidth - radius, bodyY);
+    ctx.quadraticCurveTo(bodyX + bodyWidth, bodyY, bodyX + bodyWidth, bodyY + radius);
+    ctx.lineTo(bodyX + bodyWidth, bodyY + bodyHeight - radius);
+    ctx.quadraticCurveTo(bodyX + bodyWidth, bodyY + bodyHeight, bodyX + bodyWidth - radius, bodyY + bodyHeight);
+    ctx.lineTo(bodyX + radius, bodyY + bodyHeight);
+    ctx.quadraticCurveTo(bodyX, bodyY + bodyHeight, bodyX, bodyY + bodyHeight - radius);
+    ctx.lineTo(bodyX, bodyY + radius);
+    ctx.quadraticCurveTo(bodyX, bodyY, bodyX + radius, bodyY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Head
+    const headWidth = bodyWidth * 0.6;
+    const headHeight = size * 0.3;
+    const headX = centerX - headWidth / 2;
+    const headY = bodyY - headHeight * 0.7;
+
+    ctx.beginPath();
+    ctx.roundRect(headX, headY, headWidth, headHeight, radius * 0.5);
+    ctx.fill();
+    ctx.stroke();
+
+    // Eyes (visor)
+    ctx.fillStyle = '#00ffff';
+    const eyeWidth = headWidth * 0.7;
+    const eyeHeight = headHeight * 0.35;
+    ctx.fillRect(centerX - eyeWidth / 2, headY + headHeight * 0.3, eyeWidth, eyeHeight);
+  }
+
+  // Drag and drop state
+  setDragState(isDragging, dragMechs = null, validMoves = null) {
+    this.isDraggingMech = isDragging;
+    this.dragMechs = dragMechs;
+    this.validMoves = validMoves ? new Set(validMoves.map(m => `${m.x},${m.y}`)) : null;
+    this.render();
+  }
+
+  // Draw move highlights during drag
+  drawMoveHighlights() {
+    if (!this.isDraggingMech || !this.validMoves) return;
+
+    const ctx = this.ctx;
+    const tileSize = this.tileSize;
+
+    // Calculate visible range
+    const startX = Math.max(0, Math.floor(-this.panX / tileSize));
+    const startY = Math.max(0, Math.floor(-this.panY / tileSize));
+    const endX = Math.min(this.gridSize, Math.ceil((this.canvas.width - this.panX) / tileSize));
+    const endY = Math.min(this.gridSize, Math.ceil((this.canvas.height - this.panY) / tileSize));
+
+    for (let x = startX; x < endX; x++) {
+      for (let y = startY; y < endY; y++) {
+        const key = `${x},${y}`;
+        const px = this.panX + x * tileSize;
+        const py = this.panY + y * tileSize;
+
+        if (this.validMoves.has(key)) {
+          // Valid move - light blue
+          ctx.fillStyle = 'rgba(74, 158, 255, 0.3)';
+          ctx.fillRect(px, py, tileSize, tileSize);
+          ctx.strokeStyle = 'rgba(74, 158, 255, 0.8)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
+        } else if (this.visibleTiles.has(key)) {
+          // Invalid move - light red (only on visible tiles)
+          ctx.fillStyle = 'rgba(255, 74, 74, 0.2)';
+          ctx.fillRect(px, py, tileSize, tileSize);
+        }
+      }
+    }
+  }
+
+  // Get mechs at a specific tile (for selection)
+  getMechsAtTile(x, y) {
+    return this.mechs.filter(m => m.x === x && m.y === y);
   }
 }

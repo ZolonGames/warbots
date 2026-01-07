@@ -8,6 +8,17 @@ let pendingOrders = {
   builds: []
 };
 
+// Drag state
+let dragState = {
+  isDragging: false,
+  mech: null,
+  startTile: null,
+  ghost: null
+};
+
+// Player colors (matching map.js)
+const playerColors = ['#4a9eff', '#4aff9e', '#ff4a4a', '#ffcc4a', '#ff4aff', '#4affff', '#ffaa4a', '#aa4aff'];
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Get game ID from URL
   const params = new URLSearchParams(window.location.search);
@@ -44,8 +55,11 @@ async function initGame(gameId) {
     // Initialize map
     const canvas = document.getElementById('game-map');
     gameMap = new GameMap(canvas, gameState.gridSize);
+    gameMap.playerId = playerId; // Set player ID for mech detection
     gameMap.onTileClick = handleTileClick;
     gameMap.onTileHover = handleTileHover;
+    gameMap.onMechDragStart = handleMapMechDragStart;
+    gameMap.onMechDragEnd = handleMapMechDragEnd;
 
     // Set initial state
     updateMapState();
@@ -86,6 +100,7 @@ function handleTileClick(tile) {
   // Check if tile is visible
   if (!gameState.visibleTiles.includes(key)) {
     updateSelectionPanel(null);
+    updateMechsPanel(null);
     return;
   }
 
@@ -96,6 +111,10 @@ function handleTileClick(tile) {
   const mechs = gameState.mechs.filter(m => m.x === tile.x && m.y === tile.y);
 
   updateSelectionPanel({ tile, planet, mechs });
+
+  // Update mechs panel with your mechs at this tile
+  const yourMechs = mechs.filter(m => m.owner_id === playerId);
+  updateMechsPanel(yourMechs.length > 0 ? { tile, mechs: yourMechs } : null);
 }
 
 function handleTileHover(tile, event) {
@@ -250,6 +269,9 @@ function setupUIHandlers() {
   document.getElementById('zoom-in').addEventListener('click', () => gameMap.zoomIn());
   document.getElementById('zoom-out').addEventListener('click', () => gameMap.zoomOut());
   document.getElementById('reset-view').addEventListener('click', () => gameMap.resetView());
+
+  // Set up drag-and-drop for mechs from sidebar
+  setupMapDropZone();
 }
 
 function addBuildOrder(planetId, type, buildType) {
@@ -318,9 +340,22 @@ async function submitTurn() {
   try {
     await api.submitTurn(gameId, pendingOrders);
     clearOrders();
-    alert('Turn submitted!');
+    showWaitingIndicator(true);
   } catch (error) {
     alert('Failed to submit turn: ' + error.message);
+  }
+}
+
+function showWaitingIndicator(show) {
+  const indicator = document.getElementById('waiting-indicator');
+  const submitBtn = document.getElementById('submit-turn');
+
+  if (show) {
+    indicator.style.display = 'flex';
+    submitBtn.style.display = 'none';
+  } else {
+    indicator.style.display = 'none';
+    submitBtn.style.display = 'inline-flex';
   }
 }
 
@@ -379,10 +414,224 @@ async function refreshGameState(gameId) {
     updatePlayerInfo();
     updateMapState();
 
+    // Hide waiting indicator on new turn
+    showWaitingIndicator(false);
+
     if (gameState.turnDeadline) {
       startTurnTimer(new Date(gameState.turnDeadline));
     }
   } catch (error) {
     console.error('Failed to refresh game state:', error);
+  }
+}
+
+// Mech panel functions
+function updateMechsPanel(selection) {
+  const panel = document.getElementById('mechs-panel');
+  const list = document.getElementById('mechs-list');
+
+  if (!selection || !selection.mechs || selection.mechs.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'block';
+  list.innerHTML = '';
+
+  for (const mech of selection.mechs) {
+    const item = createMechItem(mech, selection.tile);
+    list.appendChild(item);
+  }
+}
+
+function createMechItem(mech, tile) {
+  const item = document.createElement('div');
+  item.className = 'mech-item';
+  item.dataset.mechId = mech.id;
+  item.dataset.tileX = tile.x;
+  item.dataset.tileY = tile.y;
+
+  // Create small canvas for mech icon
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+
+  // Draw mech icon
+  const color = playerColors[mech.owner_id % playerColors.length];
+  drawMechIconSmall(ctx, 16, 16, 12, color);
+
+  item.appendChild(canvas);
+
+  // Type label
+  const typeLabel = document.createElement('span');
+  typeLabel.className = 'mech-type';
+  typeLabel.textContent = mech.type.charAt(0).toUpperCase();
+  item.appendChild(typeLabel);
+
+  // Set up drag events
+  item.draggable = true;
+  item.addEventListener('dragstart', (e) => handleMechDragStart(e, mech, tile));
+  item.addEventListener('dragend', (e) => handleMechDragEnd(e));
+
+  return item;
+}
+
+function drawMechIconSmall(ctx, centerX, centerY, size, color) {
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+
+  // Robot body
+  const bodyWidth = size * 0.7;
+  const bodyHeight = size * 0.8;
+  const bodyX = centerX - bodyWidth / 2;
+  const bodyY = centerY - bodyHeight / 2 + size * 0.1;
+
+  // Main body (rounded rect)
+  ctx.beginPath();
+  const radius = size * 0.15;
+  ctx.moveTo(bodyX + radius, bodyY);
+  ctx.lineTo(bodyX + bodyWidth - radius, bodyY);
+  ctx.quadraticCurveTo(bodyX + bodyWidth, bodyY, bodyX + bodyWidth, bodyY + radius);
+  ctx.lineTo(bodyX + bodyWidth, bodyY + bodyHeight - radius);
+  ctx.quadraticCurveTo(bodyX + bodyWidth, bodyY + bodyHeight, bodyX + bodyWidth - radius, bodyY + bodyHeight);
+  ctx.lineTo(bodyX + radius, bodyY + bodyHeight);
+  ctx.quadraticCurveTo(bodyX, bodyY + bodyHeight, bodyX, bodyY + bodyHeight - radius);
+  ctx.lineTo(bodyX, bodyY + radius);
+  ctx.quadraticCurveTo(bodyX, bodyY, bodyX + radius, bodyY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Head
+  const headWidth = bodyWidth * 0.6;
+  const headHeight = size * 0.3;
+  const headX = centerX - headWidth / 2;
+  const headY = bodyY - headHeight * 0.7;
+
+  ctx.beginPath();
+  ctx.roundRect(headX, headY, headWidth, headHeight, radius * 0.5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Eyes (visor)
+  ctx.fillStyle = '#00ffff';
+  const eyeWidth = headWidth * 0.7;
+  const eyeHeight = headHeight * 0.35;
+  ctx.fillRect(centerX - eyeWidth / 2, headY + headHeight * 0.3, eyeWidth, eyeHeight);
+}
+
+// Drag and drop handlers
+function handleMechDragStart(e, mech, tile) {
+  dragState.isDragging = true;
+  dragState.mech = mech;
+  dragState.startTile = tile;
+
+  // Set drag data
+  e.dataTransfer.setData('text/plain', JSON.stringify({ mechId: mech.id, fromX: tile.x, fromY: tile.y }));
+  e.dataTransfer.effectAllowed = 'move';
+
+  // Calculate valid moves (adjacent tiles)
+  const validMoves = getValidMoves(tile.x, tile.y);
+  gameMap.setDragState(true, [mech], validMoves);
+
+  // Add class to dragged item
+  e.target.classList.add('dragging');
+
+  // Show drop zone on map
+  document.querySelector('.map-container').classList.add('drop-active');
+}
+
+function handleMechDragEnd(e) {
+  dragState.isDragging = false;
+  dragState.mech = null;
+  dragState.startTile = null;
+
+  // Reset map drag state
+  gameMap.setDragState(false);
+
+  // Remove classes
+  e.target.classList.remove('dragging');
+  document.querySelector('.map-container').classList.remove('drop-active');
+}
+
+function getValidMoves(fromX, fromY) {
+  const moves = [];
+  const directions = [
+    { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+    { dx: -1, dy: 0 },                      { dx: 1, dy: 0 },
+    { dx: -1, dy: 1 },  { dx: 0, dy: 1 },  { dx: 1, dy: 1 }
+  ];
+
+  for (const dir of directions) {
+    const newX = fromX + dir.dx;
+    const newY = fromY + dir.dy;
+
+    // Check bounds
+    if (newX >= 0 && newX < gameState.gridSize && newY >= 0 && newY < gameState.gridSize) {
+      moves.push({ x: newX, y: newY });
+    }
+  }
+
+  return moves;
+}
+
+// Set up map drop zone
+function setupMapDropZone() {
+  const mapContainer = document.querySelector('.map-container');
+  const canvas = document.getElementById('game-map');
+
+  mapContainer.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  mapContainer.addEventListener('drop', (e) => {
+    e.preventDefault();
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+
+      // Get tile from mouse position
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left - gameMap.panX) / gameMap.tileSize;
+      const y = (e.clientY - rect.top - gameMap.panY) / gameMap.tileSize;
+      const toX = Math.floor(x);
+      const toY = Math.floor(y);
+
+      // Check if valid move
+      const validMoves = getValidMoves(data.fromX, data.fromY);
+      const isValid = validMoves.some(m => m.x === toX && m.y === toY);
+
+      if (isValid) {
+        addMoveOrder(data.mechId, toX, toY);
+      }
+    } catch (err) {
+      console.error('Drop error:', err);
+    }
+
+    // Clean up
+    document.querySelector('.map-container').classList.remove('drop-active');
+  });
+}
+
+// Map mech drag handlers (called by map.js)
+function handleMapMechDragStart(tile, mechs) {
+  // Calculate valid moves and show highlights
+  const validMoves = getValidMoves(tile.x, tile.y);
+  gameMap.setDragState(true, mechs, validMoves);
+}
+
+function handleMapMechDragEnd(fromTile, toTile, mechs) {
+  // Check if valid move
+  const validMoves = getValidMoves(fromTile.x, fromTile.y);
+  const isValid = validMoves.some(m => m.x === toTile.x && m.y === toTile.y);
+
+  if (isValid && (toTile.x !== fromTile.x || toTile.y !== fromTile.y)) {
+    // Move all mechs in the group
+    for (const mech of mechs) {
+      addMoveOrder(mech.id, toTile.x, toTile.y);
+    }
   }
 }
