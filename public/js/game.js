@@ -388,11 +388,6 @@ function updateBuildButtons(planet) {
       .map(b => b.buildingType)
   );
 
-  // Check if a factory is queued (for mech building)
-  const factoryQueued = pendingOrders.builds.some(
-    b => b.planetId === planet.id && b.type === 'building' && b.buildingType === 'factory'
-  );
-
   document.querySelectorAll('.build-btn').forEach(btn => {
     const type = btn.dataset.type;
     const buildType = btn.dataset.build;
@@ -421,8 +416,8 @@ function updateBuildButtons(planet) {
         statusEl.textContent = `(${cost})`;
       }
     } else if (type === 'mech') {
-      // Mechs require a factory (existing or queued)
-      if (!hasFactory && !factoryQueued) {
+      // Mechs require an existing factory (queued factories don't count)
+      if (!hasFactory) {
         btn.disabled = true;
         btn.classList.add('no-factory');
         statusEl.textContent = 'Requires Factory';
