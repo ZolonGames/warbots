@@ -19,6 +19,24 @@ let dragState = {
 // Player colors (matching map.js)
 const playerColors = ['#4a9eff', '#4aff9e', '#ff4a4a', '#ffcc4a', '#ff4aff', '#4affff', '#ffaa4a', '#aa4aff'];
 
+// Build costs
+const COSTS = {
+  buildings: {
+    mining: 5,
+    factory: 10,
+    fortification: 8
+  },
+  mechs: {
+    light: 1,
+    medium: 2,
+    heavy: 4,
+    assault: 8
+  }
+};
+
+// Track displayed credits (may differ from server due to pending orders)
+let displayedCredits = 0;
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Get game ID from URL
   const params = new URLSearchParams(window.location.search);
@@ -90,8 +108,22 @@ function updateMapState() {
 }
 
 function updatePlayerInfo() {
-  document.getElementById('player-credits').textContent = gameState.credits;
+  displayedCredits = gameState.credits;
+  document.getElementById('player-credits').textContent = displayedCredits;
   document.getElementById('player-income').textContent = gameState.income;
+}
+
+function updateCreditsDisplay() {
+  document.getElementById('player-credits').textContent = displayedCredits;
+}
+
+function getCost(type, buildType) {
+  if (type === 'building') {
+    return COSTS.buildings[buildType] || 0;
+  } else if (type === 'mech') {
+    return COSTS.mechs[buildType] || 0;
+  }
+  return 0;
 }
 
 function handleTileClick(tile) {
@@ -275,10 +307,23 @@ function setupUIHandlers() {
 }
 
 function addBuildOrder(planetId, type, buildType) {
+  const cost = getCost(type, buildType);
+
+  // Check if player has enough credits
+  if (displayedCredits < cost) {
+    alert(`Not enough credits! Need ${cost}, have ${displayedCredits}.`);
+    return;
+  }
+
+  // Deduct credits
+  displayedCredits -= cost;
+  updateCreditsDisplay();
+
   pendingOrders.builds.push({
     planetId,
     type,
-    [type === 'mech' ? 'mechType' : 'buildingType']: buildType
+    [type === 'mech' ? 'mechType' : 'buildingType']: buildType,
+    cost // Store cost for refund
   });
   updateOrdersList();
 }
@@ -325,11 +370,28 @@ function updateOrdersList() {
 }
 
 function removeOrder(type, index) {
+  // Refund credits if removing a build order
+  if (type === 'builds' && pendingOrders.builds[index]) {
+    const order = pendingOrders.builds[index];
+    if (order.cost) {
+      displayedCredits += order.cost;
+      updateCreditsDisplay();
+    }
+  }
+
   pendingOrders[type].splice(index, 1);
   updateOrdersList();
 }
 
 function clearOrders() {
+  // Refund all pending build orders
+  for (const order of pendingOrders.builds) {
+    if (order.cost) {
+      displayedCredits += order.cost;
+    }
+  }
+  updateCreditsDisplay();
+
   pendingOrders = { moves: [], builds: [] };
   updateOrdersList();
 }
