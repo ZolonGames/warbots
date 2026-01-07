@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Warbots - Game Lobby</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header-bar">
+      <h1><a href="/">WARBOTS</a></h1>
+      <div class="user-info">
+        <span id="user-name"></span>
+        <a href="/auth/logout" class="btn btn-small">Logout</a>
+      </div>
+    </header>
+
+    <main class="lobby">
+      <section class="create-game">
+        <h2>Create New Game</h2>
+        <form id="create-game-form">
+          <div class="form-group">
+            <label for="game-name">Game Name</label>
+            <input type="text" id="game-name" required placeholder="My Epic Battle">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="grid-size">Map Size</label>
+              <select id="grid-size">
+                <option value="25">Small (25x25)</option>
+                <option value="50" selected>Medium (50x50)</option>
+                <option value="100">Large (100x100)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="max-players">Players</label>
+              <select id="max-players">
+                <option value="2">2 Players</option>
+                <option value="3">3 Players</option>
+                <option value="4" selected>4 Players</option>
+                <option value="5">5 Players</option>
+                <option value="6">6 Players</option>
+                <option value="7">7 Players</option>
+                <option value="8">8 Players</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="turn-timer">Turn Timer</label>
+              <select id="turn-timer">
+                <option value="60">1 minute</option>
+                <option value="300">5 minutes</option>
+                <option value="900">15 minutes</option>
+                <option value="3600">1 hour</option>
+                <option value="86400" selected>24 hours</option>
+                <option value="172800">48 hours</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Create Game</button>
+        </form>
+      </section>
+
+      <section class="game-list">
+        <h2>Available Games</h2>
+        <div id="games-container">
+          <p class="loading">Loading games...</p>
+        </div>
+      </section>
+
+      <section class="my-games">
+        <h2>My Active Games</h2>
+        <div id="my-games-container">
+          <p class="loading">Loading your games...</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/lobby.js"></script>
+</body>
+</html>

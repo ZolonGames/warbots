@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Warbots - Game</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="game-container">
+    <header class="game-header">
+      <div class="game-info">
+        <h1 id="game-name">Loading...</h1>
+        <span class="turn-info">Turn <span id="turn-number">0</span></span>
+        <span class="timer" id="turn-timer">--:--</span>
+      </div>
+      <div class="player-info">
+        <span class="credits">Credits: <span id="player-credits">0</span></span>
+        <span class="income">Income: +<span id="player-income">0</span>/turn</span>
+      </div>
+      <div class="actions">
+        <button id="submit-turn" class="btn btn-primary">Submit Turn</button>
+        <a href="/lobby.html" class="btn btn-secondary">Leave Game</a>
+      </div>
+    </header>
+
+    <main class="game-main">
+      <aside class="sidebar left-sidebar">
+        <section class="orders-panel">
+          <h3>Pending Orders</h3>
+          <div id="orders-list">
+            <p class="empty">No orders queued</p>
+          </div>
+          <button id="clear-orders" class="btn btn-small">Clear All</button>
+        </section>
+      </aside>
+
+      <section class="map-container">
+        <canvas id="game-map"></canvas>
+        <div id="map-tooltip" class="tooltip" style="display: none;"></div>
+      </section>
+
+      <aside class="sidebar right-sidebar">
+        <section class="selection-panel">
+          <h3>Selection</h3>
+          <div id="selection-info">
+            <p class="empty">Click a tile to select</p>
+          </div>
+        </section>
+
+        <section class="build-panel" style="display: none;">
+          <h3>Build</h3>
+          <div class="build-options">
+            <h4>Buildings</h4>
+            <button class="build-btn" data-type="building" data-build="mining">
+              Mining Colony (5)
+            </button>
+            <button class="build-btn" data-type="building" data-build="factory">
+              Factory (10)
+            </button>
+            <button class="build-btn" data-type="building" data-build="fortification">
+              Fortification (8)
+            </button>
+
+            <h4>Mechs</h4>
+            <button class="build-btn" data-type="mech" data-build="light">
+              Light Mech (1)
+            </button>
+            <button class="build-btn" data-type="mech" data-build="medium">
+              Medium Mech (2)
+            </button>
+            <button class="build-btn" data-type="mech" data-build="heavy">
+              Heavy Mech (4)
+            </button>
+            <button class="build-btn" data-type="mech" data-build="assault">
+              Assault Mech (8)
+            </button>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="game-footer">
+      <div id="combat-log">
+        <h4>Combat Log</h4>
+        <div id="log-entries"></div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/map.js"></script>
+  <script src="/js/game.js"></script>
+</body>
+</html>

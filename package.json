@@ -1,0 +1,22 @@
+{
+  "name": "warbots",
+  "version": "1.0.0",
+  "description": "Turn-based multiplayer robot conquest game",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "keywords": ["game", "multiplayer", "turn-based", "robots"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "sql.js": "^1.10.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "express-session": "^1.18.0",
+    "session-file-store": "^1.5.0",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0"
+  }
+}
