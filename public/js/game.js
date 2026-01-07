@@ -86,9 +86,11 @@ async function initGame(gameId) {
     // Set up UI handlers
     setupUIHandlers();
 
-    // Check game status and show appropriate indicator
+    // Check game status and show appropriate UI
     if (gameState.status === 'waiting') {
       showWaitingForPlayers(true);
+      showLobbyPanel(true);
+      updateLobbyPanel();
     } else if (gameState.hasSubmittedTurn) {
       showWaitingIndicator(true);
     }
@@ -1035,6 +1037,9 @@ function setupUIHandlers() {
   // Clear orders button
   document.getElementById('clear-orders').addEventListener('click', clearOrders);
 
+  // Start game button (for host in waiting state)
+  document.getElementById('start-game-btn').addEventListener('click', startGame);
+
   // Map controls
   document.getElementById('zoom-in').addEventListener('click', () => gameMap.zoomIn());
   document.getElementById('zoom-out').addEventListener('click', () => gameMap.zoomOut());
@@ -1264,6 +1269,80 @@ function showWaitingForPlayers(show) {
     indicator.style.display = 'none';
     submitBtn.style.display = 'inline-flex';
   }
+}
+
+function showLobbyPanel(show) {
+  const lobbyPanel = document.getElementById('lobby-panel');
+  const ordersPanel = document.getElementById('orders-panel');
+
+  if (show) {
+    lobbyPanel.style.display = 'block';
+    ordersPanel.style.display = 'none';
+  } else {
+    lobbyPanel.style.display = 'none';
+    ordersPanel.style.display = 'block';
+  }
+}
+
+function updateLobbyPanel() {
+  const playersList = document.getElementById('players-list');
+  const startBtn = document.getElementById('start-game-btn');
+  const maxPlayers = gameState.maxPlayers;
+  const players = gameState.players || [];
+  const isHost = gameState.userId === gameState.hostId;
+
+  // Build players list HTML
+  let html = '';
+  for (let i = 0; i < maxPlayers; i++) {
+    const player = players[i];
+    if (player) {
+      const color = player.empire_color || '#888';
+      html += `
+        <div class="lobby-player joined">
+          <span class="player-color" style="background-color: ${color};"></span>
+          <span class="player-name" style="color: ${color};">${escapeHtml(player.empire_name || player.display_name)}</span>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="lobby-player empty">
+          <span class="player-color"></span>
+          <span class="player-name">Waiting for player...</span>
+        </div>
+      `;
+    }
+  }
+  playersList.innerHTML = html;
+
+  // Show start button for host
+  if (isHost) {
+    startBtn.style.display = 'block';
+    startBtn.disabled = players.length < 2;
+    startBtn.title = players.length < 2 ? 'Need at least 2 players to start' : '';
+  } else {
+    startBtn.style.display = 'none';
+  }
+}
+
+async function startGame() {
+  const startBtn = document.getElementById('start-game-btn');
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting...';
+
+  try {
+    await api.startGame(gameState.gameId);
+    // Game will start and SSE will notify us
+  } catch (error) {
+    alert('Failed to start game: ' + error.message);
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start Game';
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function showTurnAnnouncement(turnNumber) {
@@ -1501,7 +1580,11 @@ function setupEventSource(gameId) {
       // Refresh game state
       refreshGameState(gameId);
     } else if (data.type === 'player_joined') {
-      // Could show notification
+      // Refresh to update players list
+      refreshGameState(gameId);
+    } else if (data.type === 'game_started') {
+      // Game has started - refresh and show turn 1
+      handleGameStarted(gameId);
     }
   };
 
@@ -1513,6 +1596,7 @@ function setupEventSource(gameId) {
 async function refreshGameState(gameId) {
   try {
     const previousTurn = gameState?.currentTurn;
+    const previousStatus = gameState?.status;
     gameState = await api.getGameState(gameId);
 
     document.getElementById('turn-number').textContent = gameState.currentTurn;
@@ -1520,6 +1604,11 @@ async function refreshGameState(gameId) {
     updateMapState();
     updateEventLog();
     refreshMechsPanel();
+
+    // Update lobby panel if still waiting
+    if (gameState.status === 'waiting') {
+      updateLobbyPanel();
+    }
 
     // Hide waiting indicators on new turn / game start
     showWaitingIndicator(false);
@@ -1535,6 +1624,31 @@ async function refreshGameState(gameId) {
     }
   } catch (error) {
     console.error('Failed to refresh game state:', error);
+  }
+}
+
+async function handleGameStarted(gameId) {
+  try {
+    gameState = await api.getGameState(gameId);
+
+    document.getElementById('turn-number').textContent = gameState.currentTurn;
+    updatePlayerInfo();
+    updateMapState();
+    updateEventLog();
+    refreshMechsPanel();
+
+    // Hide lobby panel and show orders panel
+    showLobbyPanel(false);
+    showWaitingForPlayers(false);
+
+    // Show turn 1 announcement
+    showTurnAnnouncement(1);
+
+    if (gameState.turnDeadline) {
+      startTurnTimer(new Date(gameState.turnDeadline));
+    }
+  } catch (error) {
+    console.error('Failed to handle game start:', error);
   }
 }
 

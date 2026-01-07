@@ -5,6 +5,12 @@ const { generateMap } = require('../services/mapGenerator');
 
 const router = express.Router();
 
+// Import broadcast function (will be available after api.js initializes)
+let broadcastToGame = null;
+setTimeout(() => {
+  broadcastToGame = require('./api').broadcastToGame;
+}, 0);
+
 // 15 preset empire colors
 const EMPIRE_COLORS = [
   '#FF0000', // Red
@@ -251,6 +257,11 @@ router.post('/:id/join', (req, res) => {
       VALUES (?, ?, ?, 10, ?, ?)
     `).run(game.id, req.user.id, playerNumber, empireName.trim(), empireColor);
 
+    // Broadcast player joined event
+    if (broadcastToGame) {
+      broadcastToGame(game.id, { type: 'player_joined', playerNumber });
+    }
+
     res.json({ success: true, playerNumber });
   } catch (error) {
     console.error('Failed to join game:', error);
@@ -404,6 +415,11 @@ router.post('/:id/start', (req, res) => {
       SET status = 'active', current_turn = 1, turn_deadline = ?
       WHERE id = ?
     `).run(turnDeadline, game.id);
+
+    // Broadcast game started event to all players
+    if (broadcastToGame) {
+      broadcastToGame(game.id, { type: 'game_started' });
+    }
 
     res.json({ success: true });
   } catch (error) {
