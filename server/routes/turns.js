@@ -149,6 +149,9 @@ function validateOrders(orders, player, game) {
     assault: 8
   };
 
+  // Track planets that already have a mech order (1 mech per factory per turn)
+  const planetsWithMechOrder = new Set();
+
   for (const build of builds) {
     if (!build.planetId || !build.type) {
       return { valid: false, error: 'Invalid build order format' };
@@ -172,6 +175,12 @@ function validateOrders(orders, player, game) {
       if (!factory) {
         return { valid: false, error: 'Cannot build mechs without a factory' };
       }
+
+      // Check if this planet already has a mech order (1 mech per factory per turn)
+      if (planetsWithMechOrder.has(build.planetId)) {
+        return { valid: false, error: 'Each factory can only produce 1 mech per turn' };
+      }
+      planetsWithMechOrder.add(build.planetId);
 
       const mechType = build.mechType;
       if (!['light', 'medium', 'heavy', 'assault'].includes(mechType)) {

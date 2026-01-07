@@ -388,6 +388,11 @@ function updateBuildButtons(planet) {
       .map(b => b.buildingType)
   );
 
+  // Check if a mech is already queued for this planet (factories can only build 1 mech per turn)
+  const mechQueuedForPlanet = pendingOrders.builds.some(
+    b => b.planetId === planet.id && b.type === 'mech'
+  );
+
   document.querySelectorAll('.build-btn').forEach(btn => {
     const type = btn.dataset.type;
     const buildType = btn.dataset.build;
@@ -421,6 +426,11 @@ function updateBuildButtons(planet) {
         btn.disabled = true;
         btn.classList.add('no-factory');
         statusEl.textContent = 'Requires Factory';
+      } else if (mechQueuedForPlanet) {
+        // Factory can only produce 1 mech per turn
+        btn.disabled = true;
+        btn.classList.add('queued');
+        statusEl.textContent = '1 per turn';
       } else if (displayedCredits < cost) {
         btn.disabled = true;
         btn.classList.add('no-credits');
