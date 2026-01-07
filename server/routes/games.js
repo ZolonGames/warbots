@@ -8,7 +8,7 @@ const router = express.Router();
 // All routes require authentication
 router.use(requireAuth);
 
-// Get all open games (waiting for players)
+// Get all open games (waiting for players, excluding games user is already in)
 router.get('/', (req, res) => {
   try {
     const games = db.prepare(`
@@ -19,8 +19,9 @@ router.get('/', (req, res) => {
       FROM games g
       JOIN users u ON g.host_id = u.id
       WHERE g.status = 'waiting'
+        AND g.id NOT IN (SELECT game_id FROM game_players WHERE user_id = ?)
       ORDER BY g.created_at DESC
-    `).all();
+    `).all(req.user.id);
 
     res.json(games);
   } catch (error) {

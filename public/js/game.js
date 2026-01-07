@@ -86,6 +86,11 @@ async function initGame(gameId) {
     // Set up UI handlers
     setupUIHandlers();
 
+    // Check if player has already submitted their turn
+    if (gameState.hasSubmittedTurn) {
+      showWaitingIndicator(true);
+    }
+
     // Start turn timer
     if (gameState.turnDeadline) {
       startTurnTimer(new Date(gameState.turnDeadline));
