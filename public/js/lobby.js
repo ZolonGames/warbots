@@ -232,8 +232,10 @@ function handleEmpireSubmit(e) {
   }
 
   if (empireModalCallback) {
+    // Save callback before closing (closeEmpireModal sets it to null)
+    const callback = empireModalCallback;
     closeEmpireModal();
-    empireModalCallback(empireName, empireColor);
+    callback(empireName, empireColor);
   }
 }
 
