@@ -44,22 +44,25 @@ function processTurn(gameId) {
   // 2. Detect and resolve combats
   resolveCombats(gameId);
 
-  // 3. Process builds
+  // 3. Capture undefended planets
+  capturePlanets(gameId);
+
+  // 4. Process builds
   processBuilds(gameId, ordersByPlayer, players);
 
-  // 4. Calculate and apply income
+  // 5. Calculate and apply income
   applyIncome(gameId, players);
 
-  // 5. Heal mechs on planets
+  // 6. Heal mechs on planets
   healMechs(gameId);
 
-  // 6. Check for eliminated players
+  // 7. Check for eliminated players
   checkEliminations(gameId);
 
-  // 7. Check win condition
+  // 8. Check win condition
   const winner = checkWinCondition(gameId);
 
-  // 8. Advance turn or end game
+  // 9. Advance turn or end game
   if (winner) {
     db.prepare(`
       UPDATE games SET status = 'finished', winner_id = ? WHERE id = ?
@@ -186,6 +189,38 @@ function resolveCombats(gameId) {
         `).run(fortification.id);
       }
     }
+  }
+}
+
+/**
+ * Capture undefended planets
+ * When mechs occupy a planet with no opposing forces, they capture it
+ */
+function capturePlanets(gameId) {
+  // Get all planets in the game
+  const planets = db.prepare('SELECT * FROM planets WHERE game_id = ?').all(gameId);
+
+  for (const planet of planets) {
+    // Get all mechs on this planet
+    const mechsOnPlanet = db.prepare(`
+      SELECT DISTINCT owner_id FROM mechs WHERE game_id = ? AND x = ? AND y = ?
+    `).all(gameId, planet.x, planet.y);
+
+    // If there are mechs and they all belong to the same owner
+    if (mechsOnPlanet.length === 1) {
+      const newOwnerId = mechsOnPlanet[0].owner_id;
+
+      // If the owner is different from current planet owner, capture it
+      if (newOwnerId !== planet.owner_id) {
+        db.prepare(`
+          UPDATE planets SET owner_id = ? WHERE id = ?
+        `).run(newOwnerId, planet.id);
+
+        console.log(`Planet at (${planet.x}, ${planet.y}) captured by player ${newOwnerId}`);
+      }
+    }
+    // If mechsOnPlanet.length === 0, no mechs present - keep current owner
+    // If mechsOnPlanet.length > 1, multiple owners - contested, handled by combat
   }
 }
 
