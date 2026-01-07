@@ -124,11 +124,11 @@ router.post('/', (req, res) => {
   try {
     // Create the game
     const result = db.prepare(`
-      INSERT INTO games (name, host_id, grid_size, max_players, turn_timer)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO games (name, host_id, grid_size, max_players, turn_timer, status)
+      VALUES (?, ?, ?, ?, ?, 'waiting')
     `).run(name, req.user.id, gridSize, maxPlayers, turnTimer);
 
-    const gameId = result.lastInsertRowid;
+    const gameId = Number(result.lastInsertRowid);
 
     // Add the host as player 1 with empire info
     db.prepare(`
@@ -137,6 +137,7 @@ router.post('/', (req, res) => {
     `).run(gameId, req.user.id, empireName.trim(), empireColor);
 
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    console.log('Created game with status:', game?.status);
     res.status(201).json(game);
   } catch (error) {
     console.error('Failed to create game:', error);
