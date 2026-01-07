@@ -1,5 +1,31 @@
 const { db } = require('../config/database');
 
+// Vision ranges
+const PLANET_VISION_RANGE = 3;
+const MECH_VISION_RANGE = 2;
+
+/**
+ * Add tiles within a given range to the visible set
+ * @param {Set<string>} visibleTiles - Set to add visible tiles to
+ * @param {number} centerX - Center X coordinate
+ * @param {number} centerY - Center Y coordinate
+ * @param {number} range - Vision range
+ * @param {number} gridSize - Size of the grid
+ */
+function addVisibleTilesInRange(visibleTiles, centerX, centerY, range, gridSize) {
+  for (let dx = -range; dx <= range; dx++) {
+    for (let dy = -range; dy <= range; dy++) {
+      const newX = centerX + dx;
+      const newY = centerY + dy;
+
+      // Check bounds
+      if (newX >= 0 && newX < gridSize && newY >= 0 && newY < gridSize) {
+        visibleTiles.add(`${newX},${newY}`);
+      }
+    }
+  }
+}
+
 /**
  * Calculate which tiles are visible to a player
  * @param {number} gameId - The game ID
@@ -10,36 +36,22 @@ const { db } = require('../config/database');
 function calculateVisibility(gameId, playerId, gridSize) {
   const visibleTiles = new Set();
 
-  // Get all planets owned by the player
+  // Get all planets owned by the player - vision range 3
   const ownedPlanets = db.prepare(`
     SELECT x, y FROM planets WHERE game_id = ? AND owner_id = ?
   `).all(gameId, playerId);
 
-  // Get all mechs owned by the player
+  for (const planet of ownedPlanets) {
+    addVisibleTilesInRange(visibleTiles, planet.x, planet.y, PLANET_VISION_RANGE, gridSize);
+  }
+
+  // Get all mechs owned by the player - vision range 2
   const ownedMechs = db.prepare(`
     SELECT DISTINCT x, y FROM mechs WHERE game_id = ? AND owner_id = ?
   `).all(gameId, playerId);
 
-  // Combine all positions that grant visibility
-  const visionSources = [...ownedPlanets, ...ownedMechs];
-
-  // Each vision source reveals adjacent tiles (including diagonals)
-  for (const source of visionSources) {
-    // Reveal the source tile itself
-    visibleTiles.add(`${source.x},${source.y}`);
-
-    // Reveal adjacent tiles (8 directions)
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        const newX = source.x + dx;
-        const newY = source.y + dy;
-
-        // Check bounds
-        if (newX >= 0 && newX < gridSize && newY >= 0 && newY < gridSize) {
-          visibleTiles.add(`${newX},${newY}`);
-        }
-      }
-    }
+  for (const mech of ownedMechs) {
+    addVisibleTilesInRange(visibleTiles, mech.x, mech.y, MECH_VISION_RANGE, gridSize);
   }
 
   return visibleTiles;

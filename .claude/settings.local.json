@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix sql.js compatibility issues\n\n- Fix lastInsertRowid retrieval using proper prepared statement\n- Remove transaction wrappers that don''t work well with sql.js\n- Simplify map generator and turn processor to use direct inserts\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix sql.js compatibility issues\n\n- Fix lastInsertRowid retrieval using proper prepared statement\n- Remove transaction wrappers that don''t work well with sql.js\n- Simplify map generator and turn processor to use direct inserts\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)"
     ]
   }
 }
