@@ -1353,8 +1353,9 @@ function showTurnAnnouncement(turnNumber) {
   // Set turn number
   turnNumberEl.textContent = turnNumber;
 
-  // Set faction color
-  const factionColor = playerColors[playerId % playerColors.length] || '#4a9eff';
+  // Set faction color from player's empire color
+  const currentPlayer = gameState.players.find(p => p.id === playerId);
+  const factionColor = currentPlayer?.empire_color || '#4a9eff';
   announcement.style.color = factionColor;
 
   // Trigger animation
