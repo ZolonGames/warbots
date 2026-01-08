@@ -162,8 +162,8 @@ function renderGameCard(game) {
           <p class="game-stats">
             <span class="stat-planets">${game.planet_count} planets</span> |
             <span class="stat-mechs">${game.mech_count} mechs</span> |
-            <span class="stat-credits">${game.credits} credits</span> |
-            <span class="stat-income">+${game.income}/turn</span>
+            <span class="stat-credits${game.credits < 0 ? ' negative' : ''}">${game.credits} credits</span> |
+            <span class="stat-income${game.income < 0 ? ' negative' : ''}">${game.income >= 0 ? '+' : ''}${game.income}/turn</span>
           </p>
         ` : ''}
       </div>

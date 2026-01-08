@@ -5,7 +5,8 @@ const {
   calculateVisibility,
   getVisiblePlanets,
   getVisibleMechs,
-  calculateIncome
+  calculateIncome,
+  calculateIncomeBreakdown
 } = require('../services/visibilityCalc');
 
 const router = express.Router();
@@ -67,8 +68,9 @@ router.get('/games/:id/state', (req, res) => {
       ? db.prepare('SELECT * FROM mechs WHERE game_id = ?').all(gameId)
       : getVisibleMechs(gameId, player.id, visibleTiles);
 
-    // Calculate income
+    // Calculate income and breakdown
     const income = calculateIncome(gameId, player.id);
+    const incomeBreakdown = calculateIncomeBreakdown(gameId, player.id);
 
     // Get all players for display (with empire info and stats)
     const players = db.prepare(`
@@ -97,7 +99,7 @@ router.get('/games/:id/state', (req, res) => {
     `).all(gameId, maxTurn);
 
     // Player-specific event types (only visible to that player, never to others)
-    const playerOnlyEvents = ['turn_start', 'build_mech', 'build_building', 'income', 'planet_lost', 'repair', 'defeat', 'victory', 'player_defeated', 'game_won'];
+    const playerOnlyEvents = ['turn_start', 'build_mech', 'build_building', 'income', 'maintenance', 'maintenance_failure', 'planet_lost', 'repair', 'defeat', 'victory', 'player_defeated', 'game_won'];
 
     // Filter and format combat logs based on visibility and participation
     const combatLogs = rawCombatLogs
@@ -171,6 +173,7 @@ router.get('/games/:id/state', (req, res) => {
       userId: req.user.id,
       credits: player.credits,
       income,
+      incomeBreakdown,
       hasSubmittedTurn: player.has_submitted_turn,
       isEliminated: player.is_eliminated === 1,
       isObserver,

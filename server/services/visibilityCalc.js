@@ -165,9 +165,68 @@ function calculateIncome(gameId, playerId) {
   return baseIncome + miningBonus;
 }
 
+// Mech maintenance costs per turn (must match turnProcessor.js)
+const MAINTENANCE_COSTS = {
+  light: 1,
+  medium: 2,
+  heavy: 3,
+  assault: 4
+};
+
+/**
+ * Calculate detailed income breakdown for a player
+ * @param {number} gameId - Game ID
+ * @param {number} playerId - Player ID (game_players.id)
+ * @returns {Object} Income breakdown with planets, mining, maintenance, and net
+ */
+function calculateIncomeBreakdown(gameId, playerId) {
+  // Sum of base income from owned planets
+  const planetIncome = db.prepare(`
+    SELECT COALESCE(SUM(base_income), 0) as total
+    FROM planets
+    WHERE game_id = ? AND owner_id = ?
+  `).get(gameId, playerId).total;
+
+  // Mining colony bonuses (+2 per colony)
+  const miningCount = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM buildings b
+    JOIN planets p ON b.planet_id = p.id
+    WHERE p.game_id = ? AND p.owner_id = ? AND b.type = 'mining'
+  `).get(gameId, playerId).count;
+  const miningIncome = miningCount * 2;
+
+  // Calculate maintenance costs
+  const mechs = db.prepare(`
+    SELECT type, COUNT(*) as count
+    FROM mechs
+    WHERE game_id = ? AND owner_id = ?
+    GROUP BY type
+  `).all(gameId, playerId);
+
+  let maintenanceCost = 0;
+  const mechCounts = { light: 0, medium: 0, heavy: 0, assault: 0 };
+  for (const mech of mechs) {
+    maintenanceCost += (MAINTENANCE_COSTS[mech.type] || 0) * mech.count;
+    mechCounts[mech.type] = mech.count;
+  }
+
+  const netIncome = planetIncome + miningIncome - maintenanceCost;
+
+  return {
+    planetIncome,
+    miningIncome,
+    miningCount,
+    maintenanceCost,
+    mechCounts,
+    netIncome
+  };
+}
+
 module.exports = {
   calculateVisibility,
   getVisiblePlanets,
   getVisibleMechs,
-  calculateIncome
+  calculateIncome,
+  calculateIncomeBreakdown
 };

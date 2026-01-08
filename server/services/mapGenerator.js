@@ -3,10 +3,10 @@ const { PLANET_NAMES } = require('../data/planetNames');
 
 // Mech type definitions
 const MECH_TYPES = {
-  light: { hp: 4, cost: 2 },
-  medium: { hp: 8, cost: 5 },
-  heavy: { hp: 12, cost: 12 },
-  assault: { hp: 20, cost: 20 }
+  light: { hp: 5, cost: 2 },
+  medium: { hp: 10, cost: 5 },
+  heavy: { hp: 20, cost: 12 },
+  assault: { hp: 40, cost: 20 }
 };
 
 /**

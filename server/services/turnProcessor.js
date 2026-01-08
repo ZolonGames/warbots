@@ -10,6 +10,14 @@ const BUILDING_COSTS = {
   fortification: 25
 };
 
+// Mech maintenance costs per turn
+const MAINTENANCE_COSTS = {
+  light: 1,
+  medium: 2,
+  heavy: 3,
+  assault: 4
+};
+
 /**
  * Add an event to the event log
  */
@@ -120,10 +128,13 @@ function processTurn(gameId) {
   // 5. Calculate and apply income (with logging)
   applyIncome(gameId, turnNumber, players);
 
-  // 6. Heal mechs on planets (with logging)
-  healMechs(gameId, turnNumber);
+  // 6. Apply maintenance costs and handle negative credits
+  const playersWithNegativeCredits = applyMaintenance(gameId, turnNumber, players);
 
-  // 7. Check for eliminated players
+  // 7. Heal mechs on planets (with logging) - skip players with negative credits
+  healMechs(gameId, turnNumber, playersWithNegativeCredits);
+
+  // 8. Check for eliminated players
   checkEliminations(gameId);
 
   // 8. Check win condition
@@ -540,7 +551,7 @@ function processBuilds(gameId, turnNumber, ordersByPlayer, players) {
           db.prepare(`
             INSERT INTO buildings (planet_id, type, hp)
             VALUES (?, ?, ?)
-          `).run(planet.id, buildingType, buildingType === 'fortification' ? 10 : 0);
+          `).run(planet.id, buildingType, buildingType === 'fortification' ? 30 : 0);
           totalCost += cost;
 
           // Log building build event
@@ -590,9 +601,95 @@ function applyIncome(gameId, turnNumber, players) {
 }
 
 /**
- * Heal mechs on planets and log repairs
+ * Apply maintenance costs and handle negative credits
+ * Returns array of player IDs with negative credits (who won't get repairs)
  */
-function healMechs(gameId, turnNumber) {
+function applyMaintenance(gameId, turnNumber, players) {
+  const playersWithNegativeCredits = new Set();
+
+  for (const player of players) {
+    // Get all mechs owned by this player
+    const mechs = db.prepare(`
+      SELECT * FROM mechs WHERE game_id = ? AND owner_id = ?
+    `).all(gameId, player.id);
+
+    // Calculate total maintenance cost
+    let totalMaintenance = 0;
+    const mechCounts = { light: 0, medium: 0, heavy: 0, assault: 0 };
+    for (const mech of mechs) {
+      totalMaintenance += MAINTENANCE_COSTS[mech.type] || 0;
+      mechCounts[mech.type] = (mechCounts[mech.type] || 0) + 1;
+    }
+
+    if (totalMaintenance > 0) {
+      // Deduct maintenance from credits
+      db.prepare(`
+        UPDATE game_players SET credits = credits - ? WHERE id = ?
+      `).run(totalMaintenance, player.id);
+
+      // Get updated credits to check if negative
+      const updatedPlayer = db.prepare(`
+        SELECT credits FROM game_players WHERE id = ?
+      `).get(player.id);
+
+      const isNegative = updatedPlayer.credits < 0;
+
+      // Log maintenance event
+      addEventLog(gameId, turnNumber, 'maintenance', player.id, {
+        cost: totalMaintenance,
+        mechCounts: mechCounts,
+        creditsAfter: updatedPlayer.credits,
+        isNegative: isNegative
+      });
+
+      if (isNegative) {
+        playersWithNegativeCredits.add(player.id);
+
+        // Damage all mechs by 1 HP due to maintenance failure
+        const mechStatusReport = [];
+        for (const mech of mechs) {
+          const newHp = mech.hp - 1;
+          const destroyed = newHp <= 0;
+
+          mechStatusReport.push({
+            mechId: mech.id,
+            designation: mech.designation,
+            mechType: mech.type,
+            hpBefore: mech.hp,
+            hpAfter: Math.max(0, newHp),
+            maxHp: mech.max_hp,
+            destroyed: destroyed
+          });
+
+          if (destroyed) {
+            // Delete the mech
+            db.prepare(`DELETE FROM mechs WHERE id = ?`).run(mech.id);
+          } else {
+            // Update HP
+            db.prepare(`UPDATE mechs SET hp = ? WHERE id = ?`).run(newHp, mech.id);
+          }
+        }
+
+        // Log maintenance failure event
+        addEventLog(gameId, turnNumber, 'maintenance_failure', player.id, {
+          mechStatusReport: mechStatusReport,
+          creditsAfter: updatedPlayer.credits
+        });
+      }
+    }
+  }
+
+  return playersWithNegativeCredits;
+}
+
+/**
+ * Heal mechs and fortifications on planets and log repairs
+ */
+function healMechs(gameId, turnNumber, playersWithNegativeCredits = new Set()) {
+  const FORT_MAX_HP = 30; // Must match combatResolver.js
+  const FORT_REPAIR_RATE = 5;
+  const MECH_REPAIR_RATE = 2;
+
   // Get all planets in the game
   const planets = db.prepare('SELECT * FROM planets WHERE game_id = ?').all(gameId);
 
@@ -600,15 +697,20 @@ function healMechs(gameId, turnNumber) {
   const repairsByPlayer = {};
 
   for (const planet of planets) {
-    // Get damaged mechs at this planet before healing
+    // Get damaged mechs at this planet before healing (excluding players with negative credits)
     const damagedMechs = db.prepare(`
       SELECT * FROM mechs
       WHERE game_id = ? AND x = ? AND y = ? AND hp < max_hp
     `).all(gameId, planet.x, planet.y);
 
     for (const mech of damagedMechs) {
+      // Skip healing for players with negative credits
+      if (playersWithNegativeCredits.has(mech.owner_id)) {
+        continue;
+      }
+
       const hpBefore = mech.hp;
-      const hpAfter = Math.min(mech.hp + 2, mech.max_hp);
+      const hpAfter = Math.min(mech.hp + MECH_REPAIR_RATE, mech.max_hp);
       const hpGained = hpAfter - hpBefore;
 
       if (hpGained > 0) {
@@ -628,15 +730,51 @@ function healMechs(gameId, turnNumber) {
           y: planet.y,
           planetName: planet.name
         });
+
+        // Heal this specific mech
+        db.prepare(`
+          UPDATE mechs SET hp = ? WHERE id = ?
+        `).run(hpAfter, mech.id);
       }
     }
 
-    // Heal mechs at this planet by 2 HP (up to max)
-    db.prepare(`
-      UPDATE mechs
-      SET hp = MIN(hp + 2, max_hp)
-      WHERE game_id = ? AND x = ? AND y = ?
-    `).run(gameId, planet.x, planet.y);
+    // Heal fortifications at this planet (if owned and owner doesn't have negative credits)
+    if (planet.owner_id && !playersWithNegativeCredits.has(planet.owner_id)) {
+      const fortification = db.prepare(`
+        SELECT b.* FROM buildings b
+        WHERE b.planet_id = ? AND b.type = 'fortification' AND b.hp < ?
+      `).get(planet.id, FORT_MAX_HP);
+
+      if (fortification) {
+        const hpBefore = fortification.hp;
+        const hpAfter = Math.min(fortification.hp + FORT_REPAIR_RATE, FORT_MAX_HP);
+        const hpGained = hpAfter - hpBefore;
+
+        if (hpGained > 0) {
+          // Track fortification repair for the planet owner
+          if (!repairsByPlayer[planet.owner_id]) {
+            repairsByPlayer[planet.owner_id] = [];
+          }
+          repairsByPlayer[planet.owner_id].push({
+            mechId: null,
+            designation: 'Fortification',
+            mechType: 'fortification',
+            hpGained: hpGained,
+            hpAfter: hpAfter,
+            maxHp: FORT_MAX_HP,
+            fullyRepaired: hpAfter === FORT_MAX_HP,
+            x: planet.x,
+            y: planet.y,
+            planetName: planet.name
+          });
+
+          // Update the fortification HP
+          db.prepare(`
+            UPDATE buildings SET hp = ? WHERE id = ?
+          `).run(hpAfter, fortification.id);
+        }
+      }
+    }
   }
 
   // Log repair events for each player

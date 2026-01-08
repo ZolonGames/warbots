@@ -133,7 +133,40 @@ function updateMapState() {
 function updatePlayerInfo() {
   displayedCredits = gameState.credits;
   document.getElementById('player-credits').textContent = displayedCredits;
-  document.getElementById('player-income').textContent = gameState.income;
+
+  // Update income breakdown and net income display
+  if (gameState.incomeBreakdown) {
+    const breakdown = gameState.incomeBreakdown;
+    document.getElementById('breakdown-planets').textContent = breakdown.planetIncome;
+    document.getElementById('breakdown-mining').textContent = breakdown.miningIncome;
+    document.getElementById('breakdown-maintenance').textContent = breakdown.maintenanceCost;
+
+    // Display net income (planets + mining - maintenance)
+    const netIncome = breakdown.netIncome;
+    const incomeEl = document.getElementById('player-income');
+    incomeEl.textContent = netIncome;
+
+    // Update net income display color based on positive/negative
+    const incomeDisplay = document.getElementById('player-income-display');
+    if (netIncome < 0) {
+      incomeDisplay.classList.add('negative');
+      incomeDisplay.classList.remove('positive');
+    } else {
+      incomeDisplay.classList.remove('negative');
+      incomeDisplay.classList.add('positive');
+    }
+  } else {
+    // Fallback to old income if breakdown not available
+    document.getElementById('player-income').textContent = gameState.income;
+  }
+
+  // Style credits in red if negative
+  const creditsElement = document.getElementById('player-credits');
+  if (displayedCredits < 0) {
+    creditsElement.classList.add('negative');
+  } else {
+    creditsElement.classList.remove('negative');
+  }
 
   // Update empire name display
   const currentPlayer = gameState.players.find(p => p.id === playerId);
@@ -141,6 +174,49 @@ function updatePlayerInfo() {
     const empireDisplay = document.getElementById('empire-name-display');
     empireDisplay.textContent = currentPlayer.empire_name || `Player ${currentPlayer.player_number}`;
     empireDisplay.style.color = currentPlayer.empire_color || '#4a9eff';
+  }
+
+  // Update empire stats
+  const ownedPlanets = gameState.planets.filter(p => p.owner_id === playerId);
+  const ownedMechs = gameState.mechs.filter(m => m.owner_id === playerId);
+
+  document.getElementById('empire-planets').textContent = ownedPlanets.length;
+  document.getElementById('empire-mechs').textContent = ownedMechs.length;
+
+  // Count mechs by type
+  const mechCounts = { light: 0, medium: 0, heavy: 0, assault: 0 };
+  for (const mech of ownedMechs) {
+    if (mechCounts.hasOwnProperty(mech.type)) {
+      mechCounts[mech.type]++;
+    }
+  }
+  document.getElementById('mech-count-light').textContent = mechCounts.light;
+  document.getElementById('mech-count-medium').textContent = mechCounts.medium;
+  document.getElementById('mech-count-heavy').textContent = mechCounts.heavy;
+  document.getElementById('mech-count-assault').textContent = mechCounts.assault;
+}
+
+function toggleMechBreakdown() {
+  const breakdown = document.getElementById('mech-breakdown');
+  const expandIcon = document.getElementById('mech-expand-icon');
+  if (breakdown.style.display === 'none') {
+    breakdown.style.display = 'block';
+    expandIcon.textContent = '▼';
+  } else {
+    breakdown.style.display = 'none';
+    expandIcon.textContent = '▶';
+  }
+}
+
+function toggleIncomeBreakdown() {
+  const breakdown = document.getElementById('income-breakdown');
+  const expandIcon = document.getElementById('income-expand-icon');
+  if (breakdown.style.display === 'none') {
+    breakdown.style.display = 'block';
+    expandIcon.textContent = '▼';
+  } else {
+    breakdown.style.display = 'none';
+    expandIcon.textContent = '▶';
   }
 }
 
@@ -178,6 +254,8 @@ function updateEventLog() {
     // Group events by type for this turn
     const buildEvents = turnEvents.filter(log => log.logType === 'build_mech' || log.logType === 'build_building');
     const incomeEvents = turnEvents.filter(log => log.logType === 'income');
+    const maintenanceEvents = turnEvents.filter(log => log.logType === 'maintenance');
+    const maintenanceFailureEvents = turnEvents.filter(log => log.logType === 'maintenance_failure');
     const captureEvents = turnEvents.filter(log => log.logType === 'capture');
     const lostEvents = turnEvents.filter(log => log.logType === 'planet_lost');
     const battleEvents = turnEvents.filter(log => log.logType === 'battle');
@@ -198,6 +276,22 @@ function updateEventLog() {
     if (incomeEvents.length > 0) {
       html += '<div class="log-section-header">Income</div>';
       for (const log of incomeEvents) {
+        html += formatEventLog(log);
+      }
+    }
+
+    // Maintenance events
+    if (maintenanceEvents.length > 0) {
+      html += '<div class="log-section-header">Maintenance</div>';
+      for (const log of maintenanceEvents) {
+        html += formatEventLog(log);
+      }
+    }
+
+    // Maintenance failure events (critical - shows mech damage)
+    if (maintenanceFailureEvents.length > 0) {
+      html += '<div class="log-section-header warning-header">Critical Maintenance Report</div>';
+      for (const log of maintenanceFailureEvents) {
         html += formatEventLog(log);
       }
     }
@@ -319,6 +413,10 @@ function formatEventLog(log) {
       return formatPlayerDefeatedEvent(log);
     case 'game_won':
       return formatGameWonEvent(log);
+    case 'maintenance':
+      return formatMaintenanceEvent(log);
+    case 'maintenance_failure':
+      return formatMaintenanceFailureEvent(log);
     default:
       return '';
   }
@@ -447,6 +545,86 @@ function formatGameWonEvent(log) {
     <span class="log-icon">🏆</span>
     <span style="color: ${data.winnerEmpireColor || '#4aff4a'}; font-weight: bold;">${data.winnerEmpireName || 'An empire'}</span> has won the game!
   </div>`;
+}
+
+function formatMaintenanceEvent(log) {
+  const data = log.detailedLog || {};
+  const cost = data.cost || 0;
+  const mechCounts = data.mechCounts || {};
+
+  // Build breakdown of mech counts
+  const breakdown = [];
+  if (mechCounts.light > 0) breakdown.push(`${mechCounts.light} Light`);
+  if (mechCounts.medium > 0) breakdown.push(`${mechCounts.medium} Medium`);
+  if (mechCounts.heavy > 0) breakdown.push(`${mechCounts.heavy} Heavy`);
+  if (mechCounts.assault > 0) breakdown.push(`${mechCounts.assault} Assault`);
+
+  const breakdownText = breakdown.length > 0 ? ` (${breakdown.join(', ')})` : '';
+
+  return `<div class="log-entry log-maintenance">
+    <span class="log-icon">🔧</span>
+    Maintenance costs: <span class="credits-amount">-${cost} credits</span>${breakdownText}
+  </div>`;
+}
+
+function formatMaintenanceFailureEvent(log) {
+  const data = log.detailedLog || {};
+  const mechStatusReport = data.mechStatusReport || [];
+  const creditsAfter = data.creditsAfter || 0;
+
+  let html = `<div class="log-entry log-maintenance-failure">
+    <span class="log-icon">⚠️</span>
+    <span class="warning-text">CRITICAL: Maintenance failure! All mechs took 1 damage.</span>
+  </div>`;
+
+  // Show individual mech status
+  for (const mech of mechStatusReport) {
+    const statusIcon = mech.destroyed ? '💀' : '⚡';
+    const statusText = mech.destroyed
+      ? `<span class="destroyed-text">${mech.designation} destroyed!</span>`
+      : `${mech.designation}: ${mech.hpAfter}/${mech.maxHp} HP`;
+
+    html += `<div class="log-entry log-maintenance-damage">
+      <span class="log-icon">${statusIcon}</span>
+      ${statusText}
+    </div>`;
+  }
+
+  return html;
+}
+
+// Get maintenance failure as array of reveal items for line-by-line animation
+function getMaintenanceFailureRevealItems(log) {
+  const items = [];
+  const data = log.detailedLog || {};
+  const mechStatusReport = data.mechStatusReport || [];
+
+  // Add the warning header
+  items.push({
+    type: 'event',
+    html: `<div class="log-entry log-maintenance-failure">
+      <span class="log-icon">⚠️</span>
+      <span class="warning-text">CRITICAL: Maintenance failure! All mechs took 1 damage.</span>
+    </div>`
+  });
+
+  // Add each mech status as a separate item for reveal animation
+  for (const mech of mechStatusReport) {
+    const statusIcon = mech.destroyed ? '💀' : '⚡';
+    const statusText = mech.destroyed
+      ? `<span class="destroyed-text">${mech.designation} destroyed!</span>`
+      : `${mech.designation}: ${mech.hpAfter}/${mech.maxHp} HP`;
+
+    items.push({
+      type: 'detail',
+      html: `<div class="log-entry log-maintenance-damage">
+        <span class="log-icon">${statusIcon}</span>
+        ${statusText}
+      </div>`
+    });
+  }
+
+  return items;
 }
 
 // Get repair event as array of reveal items for line-by-line animation
@@ -948,7 +1126,15 @@ function formatDetailedBattleLog(battles) {
 }
 
 function updateCreditsDisplay() {
-  document.getElementById('player-credits').textContent = displayedCredits;
+  const creditsElement = document.getElementById('player-credits');
+  creditsElement.textContent = displayedCredits;
+
+  // Style credits in red if negative
+  if (displayedCredits < 0) {
+    creditsElement.classList.add('negative');
+  } else {
+    creditsElement.classList.remove('negative');
+  }
 
   // Also update build buttons if a planet is selected
   if (gameMap && gameMap.selectedTile) {
@@ -1219,13 +1405,15 @@ function updateBuildButtons(planet) {
         statusEl.textContent = `(${cost})`;
       }
     } else if (type === 'mech') {
+      // Mech buttons use .build-cost instead of .build-status
+      const costEl = btn.querySelector('.build-cost');
       // Mech buttons are only shown when factory exists (no-factory state handled above)
       if (displayedCredits < cost) {
         btn.disabled = true;
         btn.classList.add('no-credits');
-        statusEl.textContent = 'Not enough credits!';
+        if (costEl) costEl.textContent = `(${cost})`;
       } else {
-        statusEl.textContent = `(${cost})`;
+        if (costEl) costEl.textContent = `(${cost})`;
       }
     }
   });
@@ -1638,8 +1826,21 @@ function showTurnSummary(turnNumber, transitionType = 'turn') {
   const ownedMechs = gameState.mechs.filter(m => m.owner_id === playerId).length;
   document.getElementById('summary-planets').textContent = ownedPlanets;
   document.getElementById('summary-mechs').textContent = ownedMechs;
-  document.getElementById('summary-credits').textContent = gameState.credits;
-  document.getElementById('summary-income').textContent = gameState.income;
+  const summaryCreditsEl = document.getElementById('summary-credits');
+  summaryCreditsEl.textContent = gameState.credits;
+  if (gameState.credits < 0) {
+    summaryCreditsEl.classList.add('negative');
+  } else {
+    summaryCreditsEl.classList.remove('negative');
+  }
+  const summaryIncomeEl = document.getElementById('summary-income');
+  const netIncome = gameState.incomeBreakdown ? gameState.incomeBreakdown.netIncome : gameState.income;
+  summaryIncomeEl.textContent = netIncome;
+  if (netIncome < 0) {
+    summaryIncomeEl.classList.add('negative');
+  } else {
+    summaryIncomeEl.classList.remove('negative');
+  }
 
   // Update the Start Turn button text based on transition type
   const startBtn = document.getElementById('start-turn-btn');
@@ -1667,6 +1868,8 @@ function showTurnSummary(turnNumber, transitionType = 'turn') {
 
   const battleEvents = turnEvents.filter(log => log.logType === 'battle');
   const incomeEvents = turnEvents.filter(log => log.logType === 'income');
+  const maintenanceEvents = turnEvents.filter(log => log.logType === 'maintenance');
+  const maintenanceFailureEvents = turnEvents.filter(log => log.logType === 'maintenance_failure');
   const buildEvents = turnEvents.filter(log => log.logType === 'build_mech' || log.logType === 'build_building');
   const repairEvents = turnEvents.filter(log => log.logType === 'repair');
   const captureEvents = turnEvents.filter(log => log.logType === 'capture');
@@ -1695,6 +1898,25 @@ function showTurnSummary(turnNumber, transitionType = 'turn') {
     eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Income</div>' });
     for (const log of incomeEvents) {
       eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+  }
+
+  // Add maintenance section
+  if (maintenanceEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Maintenance</div>' });
+    for (const log of maintenanceEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+  }
+
+  // Add critical maintenance failure section (with line-by-line mech damage reveal)
+  if (maintenanceFailureEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header warning-header">Critical Maintenance Report</div>' });
+    for (const log of maintenanceFailureEvents) {
+      const failureItems = getMaintenanceFailureRevealItems(log);
+      for (const item of failureItems) {
+        eventRevealQueue.push(item);
+      }
     }
   }
 

@@ -383,8 +383,16 @@ a:hover {
   color: var(--accent-yellow);
 }
 
+.game-card-info .stat-credits.negative {
+  color: var(--accent-red);
+}
+
 .game-card-info .stat-income {
   color: var(--accent-green);
+}
+
+.game-card-info .stat-income.negative {
+  color: var(--accent-red);
 }
 
 .game-card-actions {
@@ -470,6 +478,76 @@ a:hover {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+.empire-stats {
+  text-align: left;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.empire-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.empire-stat-row.expandable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 4px;
+  margin: 0 -4px;
+  border-radius: 4px;
+}
+
+.empire-stat-row.expandable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.empire-stat-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.empire-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+#empire-planets {
+  color: var(--accent-green);
+}
+
+#empire-mechs {
+  color: var(--accent-blue);
+}
+
+.mech-breakdown {
+  margin-top: 4px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border-left: 2px solid var(--border);
+}
+
+.mech-breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.mech-breakdown-label {
+  color: var(--text-secondary);
+}
+
+.mech-breakdown-value {
+  font-weight: 500;
+  color: var(--accent-blue);
 }
 
 /* Lobby panel in left sidebar (waiting state) */
@@ -547,6 +625,64 @@ a:hover {
 
 .resource-value.income {
   color: var(--accent-green);
+}
+
+.resource-value.income.negative {
+  color: var(--accent-red);
+}
+
+.resource-value.credits.negative {
+  color: var(--accent-red);
+}
+
+.income-row {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 4px;
+}
+
+.income-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.expand-icon {
+  font-size: 10px;
+  margin-left: 4px;
+  transition: transform 0.2s;
+}
+
+.income-breakdown {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border-left: 2px solid var(--border);
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.breakdown-label {
+  color: var(--text-secondary);
+}
+
+.breakdown-value {
+  font-weight: 500;
+}
+
+.breakdown-item.positive .breakdown-value {
+  color: var(--accent-green);
+}
+
+.breakdown-item.negative .breakdown-value {
+  color: var(--accent-red);
 }
 
 .actions {
@@ -700,6 +836,27 @@ a:hover {
 .build-btn .build-status {
   color: var(--accent-yellow);
   font-size: 12px;
+}
+
+.build-btn.mech-btn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.build-btn .build-cost {
+  color: var(--accent-yellow);
+  font-size: 12px;
+}
+
+.build-btn .build-stats {
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 100%;
+}
+
+.build-btn.no-credits .build-cost {
+  color: var(--accent-red);
 }
 
 .build-btn.already-built .build-status {
@@ -941,8 +1098,16 @@ a:hover {
   color: var(--accent-yellow);
 }
 
+.turn-summary-stats #summary-credits.negative {
+  color: var(--accent-red);
+}
+
 .turn-summary-stats #summary-income {
   color: var(--accent-green);
+}
+
+.turn-summary-stats #summary-income.negative {
+  color: var(--accent-red);
 }
 
 .popout-footer {
@@ -1010,6 +1175,42 @@ a:hover {
   background: rgba(74, 255, 158, 0.1);
   border-radius: 4px;
   margin: 4px 0;
+}
+
+.log-maintenance {
+  color: var(--text-secondary);
+}
+
+.log-maintenance-failure {
+  color: var(--accent-red);
+  font-weight: bold;
+  padding: 8px;
+  background: rgba(255, 74, 74, 0.15);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.log-maintenance-damage {
+  color: var(--accent-red);
+  padding-left: 24px;
+  font-size: 13px;
+}
+
+.warning-text {
+  color: var(--accent-red);
+  font-weight: bold;
+}
+
+.destroyed-text {
+  color: var(--accent-red);
+  font-weight: bold;
+}
+
+.warning-header {
+  color: var(--accent-red) !important;
+  background: rgba(255, 74, 74, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 .log-empty {

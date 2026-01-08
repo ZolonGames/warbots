@@ -21,13 +21,13 @@ function rollDice(diceString) {
 const MECH_ATTACKS = {
   light: '1d4',
   medium: '1d6',
-  heavy: '2d6',
-  assault: '2d8'
+  heavy: '2d4',
+  assault: '2d6'
 };
 
-// Fortification attack
-const FORT_ATTACK = '2d6';
-const FORT_HP = 10;
+// Fortification stats
+const FORT_ATTACK = '1d10';
+const FORT_HP = 30;
 
 /**
  * Resolve combat at a single location

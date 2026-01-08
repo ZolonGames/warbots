@@ -75,8 +75,19 @@ router.get('/mine', (req, res) => {
         (
           SELECT COALESCE(SUM(p.base_income + COALESCE(
             (SELECT COUNT(*) FROM buildings WHERE planet_id = p.id AND type = 'mining'), 0
-          )), 0)
+          ) * 2), 0)
           FROM planets p WHERE p.game_id = g.id AND p.owner_id = gp.id
+        ) - (
+          SELECT COALESCE(SUM(
+            CASE m.type
+              WHEN 'light' THEN 1
+              WHEN 'medium' THEN 2
+              WHEN 'heavy' THEN 3
+              WHEN 'assault' THEN 4
+              ELSE 0
+            END
+          ), 0)
+          FROM mechs m WHERE m.game_id = g.id AND m.owner_id = gp.id
         ) as income
       FROM games g
       JOIN users u ON g.host_id = u.id
