@@ -91,13 +91,25 @@ async function initGame(gameId) {
       showWaitingForPlayers(true);
       showLobbyPanel(true);
       updateLobbyPanel();
+    } else if (gameState.isObserver) {
+      // Player is eliminated or winner - enter observer mode
+      enterObserverMode();
     } else if (gameState.hasSubmittedTurn) {
       showWaitingIndicator(true);
     }
 
-    // Start turn timer
-    if (gameState.turnDeadline) {
+    // Start turn timer (only for active games)
+    if (gameState.turnDeadline && gameState.status === 'active') {
       startTurnTimer(new Date(gameState.turnDeadline));
+    }
+
+    // Check if player missed a turn and should see turn summary
+    if (gameState.status === 'active' && !gameState.isObserver && gameState.currentTurn > 1) {
+      const lastSeenTurn = parseInt(localStorage.getItem(`warbots_lastSeenTurn_${gameId}`)) || 0;
+      if (gameState.currentTurn > lastSeenTurn) {
+        // Player hasn't seen the current turn yet - show summary for the turn that resolved
+        showTurnSummary(gameState.currentTurn - 1, 'turn');
+      }
     }
 
     // Set up SSE for real-time updates
@@ -299,6 +311,14 @@ function formatEventLog(log) {
       return formatBattleEvent(log, planet);
     case 'repair':
       return formatRepairEvent(log);
+    case 'defeat':
+      return formatDefeatEvent(log);
+    case 'victory':
+      return formatVictoryEvent(log);
+    case 'player_defeated':
+      return formatPlayerDefeatedEvent(log);
+    case 'game_won':
+      return formatGameWonEvent(log);
     default:
       return '';
   }
@@ -344,9 +364,17 @@ function formatBuildBuildingEvent(log) {
 
 function formatCaptureEvent(log, planet) {
   const locationText = formatLocationWithPlanet(log.x, log.y, planet);
+  const data = log.detailedLog || {};
+  const previousOwnerId = data.previousOwnerId || log.defenderId;
+
+  let captureText = `${coloredPlayerName(log.winnerId)} captured ${locationText}`;
+  if (previousOwnerId) {
+    captureText += ` from ${coloredPlayerName(previousOwnerId)}`;
+  }
+
   return `<div class="log-entry log-capture">
     <span class="log-icon">🚩</span>
-    ${coloredPlayerName(log.winnerId)} captured ${locationText}
+    ${captureText}
   </div>`;
 }
 
@@ -387,6 +415,38 @@ function formatRepairEvent(log) {
   }
 
   return html;
+}
+
+function formatDefeatEvent(log) {
+  const data = log.detailedLog || {};
+  return `<div class="log-entry log-defeat">
+    <span class="log-icon">💀</span>
+    <span style="color: ${data.empireColor || '#ff4a4a'}; font-weight: bold;">${data.empireName || 'Your empire'}</span> has been defeated!
+  </div>`;
+}
+
+function formatVictoryEvent(log) {
+  const data = log.detailedLog || {};
+  return `<div class="log-entry log-victory">
+    <span class="log-icon">👑</span>
+    <span style="color: ${data.empireColor || '#4aff4a'}; font-weight: bold;">${data.empireName || 'Your empire'}</span> is victorious!
+  </div>`;
+}
+
+function formatPlayerDefeatedEvent(log) {
+  const data = log.detailedLog || {};
+  return `<div class="log-entry log-player-defeated">
+    <span class="log-icon">☠️</span>
+    <span style="color: ${data.defeatedEmpireColor || '#ff4a4a'}; font-weight: bold;">${data.defeatedEmpireName || 'An empire'}</span> has been eliminated!
+  </div>`;
+}
+
+function formatGameWonEvent(log) {
+  const data = log.detailedLog || {};
+  return `<div class="log-entry log-game-won">
+    <span class="log-icon">🏆</span>
+    <span style="color: ${data.winnerEmpireColor || '#4aff4a'}; font-weight: bold;">${data.winnerEmpireName || 'An empire'}</span> has won the game!
+  </div>`;
 }
 
 // Get repair event as array of reveal items for line-by-line animation
@@ -439,6 +499,11 @@ function formatBattleEvent(log, planet) {
   // Outcome summary
   html += formatBattleOutcome(log);
 
+  // Status reports for each faction
+  if (log.isParticipant) {
+    html += formatBattleStatusReports(log);
+  }
+
   // Planet capture during battle
   const captureHtml = formatBattleCapture(log);
   if (captureHtml) {
@@ -474,24 +539,74 @@ function getBattleCasualties(log) {
 
 function formatBattleOutcome(log) {
   const winnerName = coloredPlayerName(log.winnerId);
-  const loserIds = log.participants.filter(id => id != log.winnerId);
-  const loserId = loserIds[0];
-  const loserName = loserId != null ? coloredPlayerName(loserId) : '<span style="color: #888;">Neutral forces</span>';
-
-  // Get casualties per participant
-  const casualties = getBattleCasualties(log);
-
-  // Winner's casualties
-  const winnerCasualties = casualties[log.winnerId] || 0;
-
-  // Loser's casualties
-  const loserCasualties = loserId != null ? (casualties[loserId] || 0) : 0;
 
   return `<div class="log-entry log-outcome">
     ${winnerName} was victorious!
-    ${winnerName} suffered ${winnerCasualties} casualt${winnerCasualties === 1 ? 'y' : 'ies'},
-    and ${loserName} suffered ${loserCasualties} casualt${loserCasualties === 1 ? 'y' : 'ies'}!
   </div>`;
+}
+
+// Format status reports for each faction after battle
+function formatBattleStatusReports(log) {
+  let html = '';
+
+  // Get battles array from detailedLog
+  const battles = log.detailedLog?.battles || log.detailedLog || [];
+  if (!Array.isArray(battles) || battles.length === 0) return '';
+
+  // Get mechStatus from the first battle (for 2-player combat)
+  const battle = battles[0];
+  if (!battle || !battle.mechStatus) return '';
+
+  const participants = log.participants || [];
+  const fortStatus = battle.fortificationStatus;
+
+  for (const playerId of participants) {
+    const playerName = getPlayerName(playerId);
+    const playerColor = getPlayerColor(playerId);
+    const isWinner = playerId === log.winnerId;
+    const reportTitle = isWinner ? 'Status Report' : 'Casualty Report';
+
+    const mechList = battle.mechStatus[playerId] || [];
+    // Check if this player had the fortification
+    const hadFort = fortStatus && fortStatus.defenderId === playerId;
+
+    if (mechList.length === 0 && !hadFort) continue;
+
+    html += `<div class="log-status-report">`;
+    html += `<div class="status-report-header" style="color: ${playerColor};">${playerName} ${reportTitle}:</div>`;
+    html += `<div class="status-report-divider">----</div>`;
+
+    // Show fortification first if this player had one
+    if (hadFort) {
+      if (fortStatus.destroyed) {
+        html += `<div class="status-report-line destroyed">- <span style="color: ${playerColor};">Fortification</span> was destroyed!</div>`;
+      } else {
+        const hpPercent = fortStatus.hp / fortStatus.maxHp;
+        let hpClass = 'hp-high';
+        if (hpPercent <= 0.25) hpClass = 'hp-low';
+        else if (hpPercent <= 0.5) hpClass = 'hp-medium';
+
+        html += `<div class="status-report-line">- <span style="color: ${playerColor};">Fortification</span> <span class="${hpClass}">${fortStatus.hp}/${fortStatus.maxHp}</span></div>`;
+      }
+    }
+
+    for (const mech of mechList) {
+      if (mech.destroyed) {
+        html += `<div class="status-report-line destroyed">- <span style="color: ${playerColor};">${mech.name}</span> was destroyed!</div>`;
+      } else {
+        const hpPercent = mech.hp / mech.maxHp;
+        let hpClass = 'hp-high';
+        if (hpPercent <= 0.25) hpClass = 'hp-low';
+        else if (hpPercent <= 0.5) hpClass = 'hp-medium';
+
+        html += `<div class="status-report-line">- <span style="color: ${playerColor};">${mech.name}</span> <span class="${hpClass}">${mech.hp}/${mech.maxHp}</span></div>`;
+      }
+    }
+
+    html += `</div>`;
+  }
+
+  return html;
 }
 
 function formatBattleCapture(log) {
@@ -566,6 +681,14 @@ function getBattleRevealItems(log) {
     html: outcomeHtml
   });
 
+  // Status reports for each faction
+  if (log.isParticipant) {
+    const statusReportItems = getBattleStatusReportItems(log);
+    for (const item of statusReportItems) {
+      items.push(item);
+    }
+  }
+
   // Planet capture (if any)
   const captureHtml = formatBattleCapture(log);
   if (captureHtml) {
@@ -573,6 +696,88 @@ function getBattleRevealItems(log) {
       type: 'event',
       html: captureHtml
     });
+  }
+
+  return items;
+}
+
+// Get status report items for line-by-line reveal
+function getBattleStatusReportItems(log) {
+  const items = [];
+
+  // Get battles array from detailedLog
+  const battles = log.detailedLog?.battles || log.detailedLog || [];
+  if (!Array.isArray(battles) || battles.length === 0) return items;
+
+  // Get mechStatus from the first battle
+  const battle = battles[0];
+  if (!battle || !battle.mechStatus) return items;
+
+  const participants = log.participants || [];
+  const fortStatus = battle.fortificationStatus;
+
+  for (const playerId of participants) {
+    const playerName = getPlayerName(playerId);
+    const playerColor = getPlayerColor(playerId);
+    const isWinner = playerId === log.winnerId;
+    const reportTitle = isWinner ? 'Status Report' : 'Casualty Report';
+
+    const mechList = battle.mechStatus[playerId] || [];
+    // Check if this player had the fortification
+    const hadFort = fortStatus && fortStatus.defenderId === playerId;
+
+    if (mechList.length === 0 && !hadFort) continue;
+
+    // Header
+    items.push({
+      type: 'detail',
+      html: `<div class="status-report-header" style="color: ${playerColor};">${playerName} ${reportTitle}:</div>`
+    });
+
+    items.push({
+      type: 'detail',
+      html: `<div class="status-report-divider">----</div>`
+    });
+
+    // Show fortification first if this player had one
+    if (hadFort) {
+      let fortHtml;
+      if (fortStatus.destroyed) {
+        fortHtml = `<div class="status-report-line destroyed">- <span style="color: ${playerColor};">Fortification</span> was destroyed!</div>`;
+      } else {
+        const hpPercent = fortStatus.hp / fortStatus.maxHp;
+        let hpClass = 'hp-high';
+        if (hpPercent <= 0.25) hpClass = 'hp-low';
+        else if (hpPercent <= 0.5) hpClass = 'hp-medium';
+
+        fortHtml = `<div class="status-report-line">- <span style="color: ${playerColor};">Fortification</span> <span class="${hpClass}">${fortStatus.hp}/${fortStatus.maxHp}</span></div>`;
+      }
+
+      items.push({
+        type: 'detail',
+        html: fortHtml
+      });
+    }
+
+    // Each mech status
+    for (const mech of mechList) {
+      let mechHtml;
+      if (mech.destroyed) {
+        mechHtml = `<div class="status-report-line destroyed">- <span style="color: ${playerColor};">${mech.name}</span> was destroyed!</div>`;
+      } else {
+        const hpPercent = mech.hp / mech.maxHp;
+        let hpClass = 'hp-high';
+        if (hpPercent <= 0.25) hpClass = 'hp-low';
+        else if (hpPercent <= 0.5) hpClass = 'hp-medium';
+
+        mechHtml = `<div class="status-report-line">- <span style="color: ${playerColor};">${mech.name}</span> <span class="${hpClass}">${mech.hp}/${mech.maxHp}</span></div>`;
+      }
+
+      items.push({
+        type: 'detail',
+        html: mechHtml
+      });
+    }
   }
 
   return items;
@@ -591,44 +796,40 @@ function getDetailedBattleRevealItems(battles) {
       if (entry.type === 'round') {
         html = `<div class="log-detail-item log-round">--- Round ${entry.round} ---</div>`;
       } else if (entry.type === 'attack') {
-        const attackerType = entry.attackerType || 'unknown';
-        const targetType = entry.targetType || 'unknown';
-        const attackerName = coloredPlayerName(entry.attackerPlayerId);
-        const attackerTypeName = attackerType.charAt(0).toUpperCase() + attackerType.slice(1);
-        const targetName = targetType === 'fortification' ? 'Fortification' : coloredPlayerName(entry.targetPlayerId);
-        const targetTypeName = targetType.charAt(0).toUpperCase() + targetType.slice(1);
+        // New format: <Mech Name> fires at <Target> and deals <x> damage!
+        const attackerColor = getPlayerColor(entry.attackerPlayerId);
+        const targetColor = getPlayerColor(entry.targetPlayerId);
+        const attackerName = entry.attackerName || entry.attackerType;
+        const targetName = entry.targetName || entry.targetType;
 
-        if (attackerType === 'fortification') {
-          html = `<div class="log-detail-item log-roll">Fortification attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
-        } else if (targetType === 'fortification') {
-          html = `<div class="log-detail-item log-roll">${attackerName}'s ${attackerTypeName} attacks Fortification → rolls ${entry.roll}</div>`;
-        } else {
-          html = `<div class="log-detail-item log-roll">${attackerName}'s ${attackerTypeName} attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
-        }
-      } else if (entry.type === 'roll') {
-        // Legacy roll format
-        const mechType = entry.mechType || 'unknown';
-        const playerName = coloredPlayerName(entry.playerId);
-        const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
-        html = `<div class="log-detail-item log-roll">${playerName}'s ${mechName} rolls ${entry.roll}</div>`;
+        html = `<div class="log-detail-item log-attack-line">` +
+          `<span style="color: ${attackerColor}; font-weight: bold;">${attackerName}</span> ` +
+          `fires at <span style="color: ${targetColor}; font-weight: bold;">${targetName}</span> ` +
+          `and deals <span class="damage-amount">${entry.roll}</span> damage!</div>`;
       } else if (entry.type === 'damage') {
-        const mechType = entry.mechType || entry.target || 'unknown';
-        if (mechType === 'fortification') {
-          html = `<div class="log-detail-item log-damage">Fortification takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
-        } else {
-          const playerName = coloredPlayerName(entry.playerId);
-          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
-          html = `<div class="log-detail-item log-damage">${playerName}'s ${mechName} takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
+        // Status line: <Mech> has <HP>/<MaxHP> HP!
+        const mechColor = getPlayerColor(entry.playerId);
+        const mechName = entry.mechName || entry.mechType;
+        const hpRemaining = entry.hpRemaining;
+        const maxHp = entry.maxHp || 10;
+
+        if (hpRemaining > 0) {
+          const hpPercent = hpRemaining / maxHp;
+          let hpClass = 'hp-high';
+          if (hpPercent <= 0.25) hpClass = 'hp-low';
+          else if (hpPercent <= 0.5) hpClass = 'hp-medium';
+
+          html = `<div class="log-detail-item log-status">` +
+            `<span style="color: ${mechColor}; font-weight: bold;">${mechName}</span> has ` +
+            `<span class="${hpClass}">${hpRemaining}/${maxHp} HP</span>!</div>`;
         }
       } else if (entry.type === 'destroyed') {
-        const mechType = entry.mechType || entry.target || 'unknown';
-        if (mechType === 'fortification') {
-          html = `<div class="log-detail-item log-destroyed">Fortification destroyed!</div>`;
-        } else {
-          const playerName = coloredPlayerName(entry.playerId);
-          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
-          html = `<div class="log-detail-item log-destroyed">${playerName}'s ${mechName} destroyed!</div>`;
-        }
+        // Destroyed line: <Mech> was destroyed!
+        const mechColor = getPlayerColor(entry.playerId);
+        const mechName = entry.mechName || entry.mechType;
+
+        html = `<div class="log-detail-item log-destroyed">` +
+          `<span style="color: ${mechColor}; font-weight: bold;">${mechName}</span> was destroyed!</div>`;
       }
 
       if (html) {
@@ -652,8 +853,14 @@ function formatCombatLog(log) {
 
   if (log.logType === 'capture') {
     // Peaceful capture
+    const data = log.detailedLog || {};
+    const previousOwnerId = data.previousOwnerId || log.defenderId;
+    let captureText = `${coloredPlayerName(log.winnerId)} captured ${locationText}`;
+    if (previousOwnerId) {
+      captureText += ` from ${coloredPlayerName(previousOwnerId)}`;
+    }
     html += `<div class="log-entry log-capture">`;
-    html += `${coloredPlayerName(log.winnerId)} captured ${locationText}`;
+    html += captureText;
     html += `</div>`;
   } else if (log.logType === 'battle') {
     // Battle occurred
@@ -698,45 +905,40 @@ function formatDetailedBattleLog(battles) {
       if (entry.type === 'round') {
         html += `<div class="log-round">--- Round ${entry.round} ---</div>`;
       } else if (entry.type === 'attack') {
-        // New attack format: shows attacker, target, and roll
-        const attackerType = entry.attackerType || 'unknown';
-        const targetType = entry.targetType || 'unknown';
-        const attackerName = coloredPlayerName(entry.attackerPlayerId);
-        const attackerTypeName = attackerType.charAt(0).toUpperCase() + attackerType.slice(1);
-        const targetName = targetType === 'fortification' ? 'Fortification' : coloredPlayerName(entry.targetPlayerId);
-        const targetTypeName = targetType.charAt(0).toUpperCase() + targetType.slice(1);
+        // New format: <Mech Name> fires at <Target> and deals <x> damage!
+        const attackerColor = getPlayerColor(entry.attackerPlayerId);
+        const targetColor = getPlayerColor(entry.targetPlayerId);
+        const attackerName = entry.attackerName || entry.attackerType;
+        const targetName = entry.targetName || entry.targetType;
 
-        if (attackerType === 'fortification') {
-          html += `<div class="log-roll">Fortification attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
-        } else if (targetType === 'fortification') {
-          html += `<div class="log-roll">${attackerName}'s ${attackerTypeName} attacks Fortification → rolls ${entry.roll}</div>`;
-        } else {
-          html += `<div class="log-roll">${attackerName}'s ${attackerTypeName} attacks ${targetName}'s ${targetTypeName} → rolls ${entry.roll}</div>`;
-        }
-      } else if (entry.type === 'roll') {
-        // Legacy roll format (kept for backwards compatibility)
-        const mechType = entry.mechType || 'unknown';
-        const playerName = coloredPlayerName(entry.playerId);
-        const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
-        html += `<div class="log-roll">${playerName}'s ${mechName} rolls ${entry.roll}</div>`;
+        html += `<div class="log-attack-line">` +
+          `<span style="color: ${attackerColor}; font-weight: bold;">${attackerName}</span> ` +
+          `fires at <span style="color: ${targetColor}; font-weight: bold;">${targetName}</span> ` +
+          `and deals <span class="damage-amount">${entry.roll}</span> damage!</div>`;
       } else if (entry.type === 'damage') {
-        const mechType = entry.mechType || entry.target || 'unknown';
-        if (mechType === 'fortification') {
-          html += `<div class="log-damage">Fortification takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
-        } else {
-          const playerName = coloredPlayerName(entry.playerId);
-          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
-          html += `<div class="log-damage">${playerName}'s ${mechName} takes ${entry.damage} damage (${entry.hpRemaining} HP left)</div>`;
+        // Status line: <Mech> has <HP>/<MaxHP> HP! (or skip if destroyed)
+        const mechColor = getPlayerColor(entry.playerId);
+        const mechName = entry.mechName || entry.mechType;
+        const hpRemaining = entry.hpRemaining;
+        const maxHp = entry.maxHp || 10;
+
+        if (hpRemaining > 0) {
+          const hpPercent = hpRemaining / maxHp;
+          let hpClass = 'hp-high';
+          if (hpPercent <= 0.25) hpClass = 'hp-low';
+          else if (hpPercent <= 0.5) hpClass = 'hp-medium';
+
+          html += `<div class="log-status">` +
+            `<span style="color: ${mechColor}; font-weight: bold;">${mechName}</span> has ` +
+            `<span class="${hpClass}">${hpRemaining}/${maxHp} HP</span>!</div>`;
         }
       } else if (entry.type === 'destroyed') {
-        const mechType = entry.mechType || entry.target || 'unknown';
-        if (mechType === 'fortification') {
-          html += `<div class="log-destroyed">Fortification destroyed!</div>`;
-        } else {
-          const playerName = coloredPlayerName(entry.playerId);
-          const mechName = mechType.charAt(0).toUpperCase() + mechType.slice(1);
-          html += `<div class="log-destroyed">${playerName}'s ${mechName} destroyed!</div>`;
-        }
+        // Destroyed line
+        const mechColor = getPlayerColor(entry.playerId);
+        const mechName = entry.mechName || entry.mechType;
+
+        html += `<div class="log-destroyed">` +
+          `<span style="color: ${mechColor}; font-weight: bold;">${mechName}</span> was destroyed!</div>`;
       }
     }
   }
@@ -860,14 +1062,6 @@ function updateSelectionPanel(selection) {
     html += `<p>Income: ${planet.base_income}</p>`;
     html += `<p>Owner: ${isOwned ? 'You' : (planet.owner_id ? 'Enemy' : 'Neutral')}</p>`;
 
-    if (planet.buildings && planet.buildings.length > 0) {
-      html += '<p><strong>Buildings:</strong></p><ul>';
-      for (const building of planet.buildings) {
-        html += `<li>${building.type}${building.type === 'fortification' ? ` (${building.hp} HP)` : ''}</li>`;
-      }
-      html += '</ul>';
-    }
-
     // Show build panel if we own this planet
     if (isOwned) {
       buildPanel.style.display = 'block';
@@ -929,6 +1123,8 @@ async function renamePlanet(planetId, newName) {
 
 function updateBuildButtons(planet) {
   const hasFactory = planet.buildings && planet.buildings.some(b => b.type === 'factory');
+  const hasMining = planet.buildings && planet.buildings.some(b => b.type === 'mining');
+  const fortification = planet.buildings && planet.buildings.find(b => b.type === 'fortification');
   const existingBuildings = new Set((planet.buildings || []).map(b => b.type));
 
   // Check which buildings are already queued for this planet
@@ -985,7 +1181,32 @@ function updateBuildButtons(planet) {
       if (existingBuildings.has(buildType)) {
         btn.disabled = true;
         btn.classList.add('already-built');
-        statusEl.textContent = 'Already built';
+
+        // Show specific status based on building type
+        if (buildType === 'mining') {
+          statusEl.innerHTML = '<span class="building-active">+2 Credits/Turn</span>';
+        } else if (buildType === 'factory') {
+          // Check if mech is queued for manufacturing
+          if (queuedMech) {
+            statusEl.innerHTML = '<span class="building-manufacturing">Manufacturing in Progress</span>';
+          } else {
+            statusEl.innerHTML = '<span class="building-active">Factory Ready</span>';
+          }
+        } else if (buildType === 'fortification' && fortification) {
+          // Show HP with color coding and damage dice
+          const hp = fortification.hp;
+          const maxHp = 10;
+          const hpPercent = hp / maxHp;
+          let hpClass;
+          if (hpPercent > 0.5) {
+            hpClass = 'hp-high';
+          } else if (hpPercent > 0.25) {
+            hpClass = 'hp-medium';
+          } else {
+            hpClass = 'hp-low';
+          }
+          statusEl.innerHTML = `<span class="${hpClass}">${hp}/${maxHp} HP</span> <span class="fort-dice">2d6</span>`;
+        }
       } else if (queuedBuildings.has(buildType)) {
         btn.disabled = true;
         btn.classList.add('queued');
@@ -1238,7 +1459,11 @@ async function submitTurn() {
 
   try {
     await api.submitTurn(gameId, pendingOrders);
-    clearOrders();
+    // Don't use clearOrders() here - that would refund the costs!
+    // Just reset the pending orders without refunding
+    pendingOrders = { moves: [], builds: [] };
+    updateOrdersList();
+    refreshMechsPanel();
     showWaitingIndicator(true);
   } catch (error) {
     alert('Failed to submit turn: ' + error.message);
@@ -1345,18 +1570,26 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function showTurnAnnouncement(turnNumber) {
+function showTurnAnnouncement(turnNumber, transitionType = 'turn') {
   const overlay = document.getElementById('turn-overlay');
   const announcement = document.getElementById('turn-announcement');
   const turnNumberEl = document.getElementById('turn-announce-number');
 
-  // Set turn number
-  turnNumberEl.textContent = turnNumber;
-
-  // Set faction color from player's empire color
-  const currentPlayer = gameState.players.find(p => p.id === playerId);
-  const factionColor = currentPlayer?.empire_color || '#4a9eff';
-  announcement.style.color = factionColor;
+  // Set announcement text based on transition type
+  if (transitionType === 'defeat') {
+    announcement.innerHTML = 'DEFEAT';
+    announcement.style.color = '#ff4a4a'; // Red
+  } else if (transitionType === 'victory') {
+    announcement.innerHTML = 'VICTORY';
+    announcement.style.color = '#4aff4a'; // Lime green
+  } else {
+    // Normal turn transition
+    announcement.innerHTML = `Turn <span id="turn-announce-number">${turnNumber}</span>`;
+    // Set faction color from player's empire color
+    const currentPlayer = gameState.players.find(p => p.id === playerId);
+    const factionColor = currentPlayer?.empire_color || '#4a9eff';
+    announcement.style.color = factionColor;
+  }
 
   // Trigger animation
   overlay.classList.add('active');
@@ -1364,8 +1597,15 @@ function showTurnAnnouncement(turnNumber) {
   // Remove after animation completes, then show turn summary
   setTimeout(() => {
     overlay.classList.remove('active');
+
+    // For observers (defeated/victor), check if we should skip turn summary on subsequent turns
+    if (gameState.isObserver && transitionType === 'turn') {
+      // Already in observer mode - skip turn summary
+      return;
+    }
+
     // Start the animated turn summary after turn announcement
-    showTurnSummary(turnNumber - 1); // Show events from the previous turn that just resolved
+    showTurnSummary(turnNumber - 1, transitionType); // Show events from the previous turn that just resolved
   }, 2500);
 }
 
@@ -1373,8 +1613,12 @@ function showTurnAnnouncement(turnNumber) {
 let eventRevealQueue = [];
 let isRevealingEvents = false;
 
-function showTurnSummary(turnNumber) {
+function showTurnSummary(turnNumber, transitionType = 'turn') {
   if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
+    // If no events and observer mode, skip directly
+    if (transitionType === 'defeat' || transitionType === 'victory') {
+      enterObserverMode();
+    }
     return;
   }
 
@@ -1384,6 +1628,10 @@ function showTurnSummary(turnNumber) {
   );
 
   if (turnEvents.length === 0) {
+    // If no events and observer mode, skip directly
+    if (transitionType === 'defeat' || transitionType === 'victory') {
+      enterObserverMode();
+    }
     return;
   }
 
@@ -1399,9 +1647,18 @@ function showTurnSummary(turnNumber) {
   document.getElementById('summary-credits').textContent = gameState.credits;
   document.getElementById('summary-income').textContent = gameState.income;
 
-  // Update the Start Turn button text
+  // Update the Start Turn button text based on transition type
   const startBtn = document.getElementById('start-turn-btn');
-  startBtn.textContent = `Start Turn ${turnNumber + 1}`;
+  if (transitionType === 'defeat') {
+    startBtn.textContent = 'Observe';
+    startBtn.dataset.transitionType = 'defeat';
+  } else if (transitionType === 'victory') {
+    startBtn.textContent = 'Survey your Domain';
+    startBtn.dataset.transitionType = 'victory';
+  } else {
+    startBtn.textContent = `Start Turn ${turnNumber + 1}`;
+    startBtn.dataset.transitionType = 'turn';
+  }
 
   // Clear the summary content for fresh reveal
   const summaryContainer = document.getElementById('turn-summary-entries');
@@ -1434,7 +1691,10 @@ function showTurnSummary(turnNumber) {
   }
 
   // Add turn summary separator
-  eventRevealQueue.push({ type: 'separator', html: `<div class="log-separator">Start of Turn ${turnNumber + 1}</div>` });
+  const separatorText = (transitionType === 'defeat' || transitionType === 'victory')
+    ? 'Game Over'
+    : `Start of Turn ${turnNumber + 1}`;
+  eventRevealQueue.push({ type: 'separator', html: `<div class="log-separator">${separatorText}</div>` });
 
   // Add income section
   if (incomeEvents.length > 0) {
@@ -1470,6 +1730,28 @@ function showTurnSummary(turnNumber) {
       eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
     }
     for (const log of lostEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+  }
+
+  // Add game-ending events (defeat, victory, eliminations)
+  const defeatEvents = turnEvents.filter(log => log.logType === 'defeat');
+  const victoryEvents = turnEvents.filter(log => log.logType === 'victory');
+  const playerDefeatedEvents = turnEvents.filter(log => log.logType === 'player_defeated');
+  const gameWonEvents = turnEvents.filter(log => log.logType === 'game_won');
+
+  if (defeatEvents.length > 0 || victoryEvents.length > 0 || playerDefeatedEvents.length > 0 || gameWonEvents.length > 0) {
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Game Status</div>' });
+    for (const log of playerDefeatedEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+    for (const log of defeatEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+    for (const log of gameWonEvents) {
+      eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
+    }
+    for (const log of victoryEvents) {
       eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
     }
   }
@@ -1548,9 +1830,102 @@ function closeTurnSummary() {
   if (isRevealingEvents) {
     skipEventReveal();
   }
+
+  // Save current turn to localStorage so we don't show summary again
+  const params = new URLSearchParams(window.location.search);
+  const gameId = params.get('id');
+  if (gameId && gameState) {
+    localStorage.setItem(`warbots_lastSeenTurn_${gameId}`, gameState.currentTurn);
+  }
+
+  // Check if we should enter observer mode
+  const startBtn = document.getElementById('start-turn-btn');
+  const transitionType = startBtn.dataset.transitionType;
+  if (transitionType === 'defeat' || transitionType === 'victory') {
+    enterObserverMode();
+  }
 }
 
+// Enter observer mode - replace orders panel with player list, disable actions
+function enterObserverMode() {
+  // Stop the turn timer - game is over for this player
+  stopTurnTimer();
+
+  // Hide orders panel, show observer panel
+  document.getElementById('orders-panel').style.display = 'none';
+  document.getElementById('observer-panel').style.display = 'block';
+
+  // Hide mechs panel (no dragging in observer mode)
+  document.getElementById('mechs-panel').style.display = 'none';
+
+  // Hide build panel
+  document.querySelector('.build-panel').style.display = 'none';
+
+  // Hide submit turn / waiting indicators
+  document.getElementById('submit-turn').style.display = 'none';
+  document.getElementById('waiting-indicator').style.display = 'none';
+  document.getElementById('waiting-for-players').style.display = 'none';
+
+  // Update observer player list
+  updateObserverPanel();
+
+  // Update empire name to show status
+  const empireDisplay = document.getElementById('empire-name-display');
+  const currentPlayer = gameState.players.find(p => p.id === playerId);
+  if (currentPlayer) {
+    const statusText = gameState.isVictor ? ' - VICTOR' : ' - DEFEATED';
+    const statusColor = gameState.isVictor ? '#4aff4a' : '#ff4a4a';
+    empireDisplay.innerHTML = `${currentPlayer.empire_name || `Player ${currentPlayer.player_number}`}<span style="color: ${statusColor};">${statusText}</span>`;
+    empireDisplay.style.color = currentPlayer.empire_color || '#4a9eff';
+  }
+}
+
+function updateObserverPanel() {
+  const container = document.getElementById('observer-players-list');
+  if (!container || !gameState.players) return;
+
+  let html = '';
+  for (const player of gameState.players) {
+    const isVictor = gameState.winnerId === player.id;
+    const isDefeated = player.is_eliminated === 1;
+
+    let statusHtml = '';
+    if (isVictor) {
+      statusHtml = '<span class="player-status victor">VICTOR</span>';
+    } else if (isDefeated) {
+      statusHtml = '<span class="player-status defeated">DEFEATED</span>';
+    } else {
+      statusHtml = '<span class="player-status active">ACTIVE</span>';
+    }
+
+    html += `
+      <div class="observer-player-item" style="border-left: 3px solid ${player.empire_color};">
+        <div class="observer-player-name" style="color: ${player.empire_color};">
+          ${player.empire_name || player.display_name}
+          ${statusHtml}
+        </div>
+        <div class="observer-player-stats">
+          <span class="stat-planets">Planets: ${player.planet_count || 0}</span>
+          <span class="stat-mechs">Mechs: ${player.mech_count || 0}</span>
+          <span class="stat-credits">Credits: ${player.credits || 0}</span>
+          <span class="stat-income">Income: ${player.income || 0}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+let turnTimerFrameId = null;
+
 function startTurnTimer(deadline) {
+  // Cancel any existing timer
+  if (turnTimerFrameId) {
+    cancelAnimationFrame(turnTimerFrameId);
+    turnTimerFrameId = null;
+  }
+
   const timerEl = document.getElementById('turn-timer');
 
   function update() {
@@ -1559,6 +1934,7 @@ function startTurnTimer(deadline) {
 
     if (diff <= 0) {
       timerEl.textContent = '00:00';
+      turnTimerFrameId = null;
       return;
     }
 
@@ -1572,10 +1948,19 @@ function startTurnTimer(deadline) {
       timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    requestAnimationFrame(update);
+    turnTimerFrameId = requestAnimationFrame(update);
   }
 
   update();
+}
+
+function stopTurnTimer() {
+  if (turnTimerFrameId) {
+    cancelAnimationFrame(turnTimerFrameId);
+    turnTimerFrameId = null;
+  }
+  const timerEl = document.getElementById('turn-timer');
+  timerEl.textContent = '--:--';
 }
 
 function setupEventSource(gameId) {
@@ -1606,6 +1991,8 @@ async function refreshGameState(gameId) {
   try {
     const previousTurn = gameState?.currentTurn;
     const previousStatus = gameState?.status;
+    const wasEliminated = gameState?.isEliminated;
+    const wasObserver = gameState?.isObserver;
     gameState = await api.getGameState(gameId);
 
     document.getElementById('turn-number').textContent = gameState.currentTurn;
@@ -1617,19 +2004,47 @@ async function refreshGameState(gameId) {
     // Update lobby panel if still waiting
     if (gameState.status === 'waiting') {
       updateLobbyPanel();
+      showWaitingForPlayers(true);
+    } else {
+      // Hide waiting indicators on new turn / game start
+      showWaitingIndicator(false);
+      showWaitingForPlayers(false);
     }
 
-    // Hide waiting indicators on new turn / game start
-    showWaitingIndicator(false);
-    showWaitingForPlayers(false);
+    // Show turn announcement if turn changed OR game just ended
+    // (When game ends with a winner, the turn doesn't advance, so we also check status change)
+    const turnChanged = previousTurn !== null && previousTurn !== undefined && gameState.currentTurn !== previousTurn;
+    const gameJustEnded = previousStatus !== 'finished' && gameState.status === 'finished';
 
-    // Show turn announcement if turn changed
-    if (previousTurn !== null && previousTurn !== undefined && gameState.currentTurn !== previousTurn) {
-      showTurnAnnouncement(gameState.currentTurn);
+    if (turnChanged || gameJustEnded) {
+      // Check if player was just eliminated this turn
+      if (!wasEliminated && gameState.isEliminated) {
+        showTurnAnnouncement(gameState.currentTurn, 'defeat');
+      }
+      // Check if player just won
+      else if (gameState.isVictor && previousStatus !== 'finished') {
+        showTurnAnnouncement(gameState.currentTurn, 'victory');
+      }
+      // Already in observer mode - simpler transition
+      else if (gameState.isObserver) {
+        showTurnAnnouncement(gameState.currentTurn, 'turn');
+      }
+      // Normal turn
+      else {
+        showTurnAnnouncement(gameState.currentTurn);
+      }
     }
 
-    if (gameState.turnDeadline) {
+    // If already in observer mode on page load, enter observer mode
+    if (gameState.isObserver && !wasObserver) {
+      enterObserverMode();
+    }
+
+    // Update turn timer (only for active games)
+    if (gameState.turnDeadline && gameState.status === 'active') {
       startTurnTimer(new Date(gameState.turnDeadline));
+    } else if (gameState.status === 'finished') {
+      stopTurnTimer();
     }
   } catch (error) {
     console.error('Failed to refresh game state:', error);

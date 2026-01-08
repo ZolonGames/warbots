@@ -33,19 +33,52 @@ router.get('/games/:id/state', (req, res) => {
       return res.status(403).json({ error: 'You are not in this game' });
     }
 
-    // Calculate visibility
-    const visibleTiles = calculateVisibility(gameId, player.id, game.grid_size);
+    // Check if player is in observer mode (eliminated or game finished)
+    const isObserver = player.is_eliminated === 1 || game.status === 'finished';
 
-    // Get visible planets and mechs
-    const planets = getVisiblePlanets(gameId, player.id, visibleTiles);
-    const mechs = getVisibleMechs(gameId, player.id, visibleTiles);
+    // Calculate visibility - observers see everything
+    let visibleTiles;
+    if (isObserver) {
+      // Generate all tiles as visible for observers
+      visibleTiles = new Set();
+      for (let x = 0; x < game.grid_size; x++) {
+        for (let y = 0; y < game.grid_size; y++) {
+          visibleTiles.add(`${x},${y}`);
+        }
+      }
+    } else {
+      visibleTiles = calculateVisibility(gameId, player.id, game.grid_size);
+    }
+
+    // Get visible planets and mechs (observers see all)
+    const planets = isObserver
+      ? db.prepare(`
+          SELECT p.*,
+            (SELECT json_group_array(json_object('id', b.id, 'type', b.type, 'hp', b.hp))
+             FROM buildings b WHERE b.planet_id = p.id) as buildings_json
+          FROM planets p WHERE p.game_id = ?
+        `).all(gameId).map(p => ({
+          ...p,
+          buildings: JSON.parse(p.buildings_json || '[]').filter(b => b.id !== null)
+        }))
+      : getVisiblePlanets(gameId, player.id, visibleTiles);
+
+    const mechs = isObserver
+      ? db.prepare('SELECT * FROM mechs WHERE game_id = ?').all(gameId)
+      : getVisibleMechs(gameId, player.id, visibleTiles);
 
     // Calculate income
     const income = calculateIncome(gameId, player.id);
 
-    // Get all players for display (with empire info)
+    // Get all players for display (with empire info and stats)
     const players = db.prepare(`
-      SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, u.display_name
+      SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, gp.credits, gp.user_id,
+             u.display_name,
+             (SELECT COUNT(*) FROM planets WHERE game_id = gp.game_id AND owner_id = gp.id) as planet_count,
+             (SELECT COUNT(*) FROM mechs WHERE game_id = gp.game_id AND owner_id = gp.id) as mech_count,
+             (SELECT COALESCE(SUM(p.base_income + COALESCE(
+               (SELECT COUNT(*) FROM buildings WHERE planet_id = p.id AND type = 'mining'), 0
+             )), 0) FROM planets p WHERE p.game_id = gp.game_id AND p.owner_id = gp.id) as income
       FROM game_players gp
       JOIN users u ON gp.user_id = u.id
       WHERE gp.game_id = ?
@@ -53,14 +86,16 @@ router.get('/games/:id/state', (req, res) => {
     `).all(gameId);
 
     // Get all combat logs for the game (all turns), ordered by turn desc then id asc
+    // For finished games, include all turns; for active games, exclude current turn (not yet resolved)
+    const maxTurn = game.status === 'finished' ? game.current_turn + 1 : game.current_turn;
     const rawCombatLogs = db.prepare(`
       SELECT * FROM combat_logs
       WHERE game_id = ? AND turn_number < ?
       ORDER BY turn_number DESC, id ASC
-    `).all(gameId, game.current_turn);
+    `).all(gameId, maxTurn);
 
     // Player-specific event types (only visible to that player, never to others)
-    const playerOnlyEvents = ['turn_start', 'build_mech', 'build_building', 'income', 'planet_lost', 'repair'];
+    const playerOnlyEvents = ['turn_start', 'build_mech', 'build_building', 'income', 'planet_lost', 'repair', 'defeat', 'victory', 'player_defeated', 'game_won'];
 
     // Filter and format combat logs based on visibility and participation
     const combatLogs = rawCombatLogs
@@ -110,6 +145,15 @@ router.get('/games/:id/state', (req, res) => {
         };
       });
 
+    // Get winner player id (game_players.id, not user_id)
+    let winnerPlayerId = null;
+    if (game.winner_id) {
+      const winnerPlayer = db.prepare(`
+        SELECT id FROM game_players WHERE game_id = ? AND user_id = ?
+      `).get(gameId, game.winner_id);
+      winnerPlayerId = winnerPlayer?.id || null;
+    }
+
     res.json({
       gameId: game.id,
       name: game.name,
@@ -119,13 +163,16 @@ router.get('/games/:id/state', (req, res) => {
       turnDeadline: game.turn_deadline,
       hostId: game.host_id,
       maxPlayers: game.max_players,
+      winnerId: winnerPlayerId,
       playerId: player.id,
       playerNumber: player.player_number,
       userId: req.user.id,
       credits: player.credits,
       income,
       hasSubmittedTurn: player.has_submitted_turn,
-      isEliminated: player.is_eliminated,
+      isEliminated: player.is_eliminated === 1,
+      isObserver,
+      isVictor: game.status === 'finished' && game.winner_id === player.user_id,
       players,
       planets,
       mechs,

@@ -536,10 +536,8 @@ class GameMap {
     const py = this.panY + planet.y * tileSize + tileSize / 2;
     const radius = tileSize * 0.35;
 
-    // Planet color based on owner
-    if (planet.is_homeworld) {
-      ctx.fillStyle = this.colors.homeworld;
-    } else if (planet.owner_id !== null) {
+    // Planet color based on owner (homeworlds use faction color too)
+    if (planet.owner_id !== null) {
       ctx.fillStyle = this.getOwnerColor(planet.owner_id);
     } else {
       ctx.fillStyle = this.colors.planet;
@@ -548,6 +546,15 @@ class GameMap {
     ctx.beginPath();
     ctx.arc(px, py, radius, 0, Math.PI * 2);
     ctx.fill();
+
+    // Draw gold ring around homeworlds to distinguish them
+    if (planet.is_homeworld && tileSize >= 12) {
+      ctx.strokeStyle = this.colors.homeworld;
+      ctx.lineWidth = Math.max(1, tileSize * 0.06);
+      ctx.beginPath();
+      ctx.arc(px, py, radius + tileSize * 0.08, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // Draw income indicator (small dots) - only when zoomed in enough
     if (tileSize >= 16) {

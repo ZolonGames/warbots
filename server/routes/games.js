@@ -55,7 +55,7 @@ router.get('/', (req, res) => {
   }
 });
 
-// Get user's games (active or waiting)
+// Get user's games (active, waiting, or finished)
 router.get('/mine', (req, res) => {
   try {
     const games = db.prepare(`
@@ -68,6 +68,8 @@ router.get('/mine', (req, res) => {
         gp.empire_color,
         gp.credits,
         gp.id as player_id,
+        gp.is_eliminated,
+        (g.winner_id = gp.user_id) as is_victor,
         (SELECT COUNT(*) FROM planets WHERE game_id = g.id AND owner_id = gp.id) as planet_count,
         (SELECT COUNT(*) FROM mechs WHERE game_id = g.id AND owner_id = gp.id) as mech_count,
         (
@@ -79,8 +81,14 @@ router.get('/mine', (req, res) => {
       FROM games g
       JOIN users u ON g.host_id = u.id
       JOIN game_players gp ON gp.game_id = g.id
-      WHERE gp.user_id = ? AND g.status != 'finished'
-      ORDER BY g.created_at DESC
+      WHERE gp.user_id = ?
+      ORDER BY
+        CASE
+          WHEN g.status = 'active' THEN 0
+          WHEN g.status = 'waiting' THEN 1
+          ELSE 2
+        END,
+        g.created_at DESC
     `).all(req.user.id, req.user.id);
 
     res.json(games);

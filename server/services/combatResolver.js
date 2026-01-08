@@ -87,15 +87,20 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
       const diceString = unitType === 'fortification' ? FORT_ATTACK : MECH_ATTACKS[unit.type];
       const roll = rollDice(diceString);
 
-      // Log the attack
+      // Log the attack with mech names
       detailedLog.push({
         type: 'attack',
         attackerSide: unit.side,
         attackerType: unitType === 'fortification' ? 'fortification' : unit.type,
+        attackerName: unitType === 'fortification' ? 'Fortification' : (unit.designation || unit.type),
+        attackerId: unit.id,
         attackerPlayerId: unit.playerId,
         targetSide: target.unit.side,
         targetType: target.type === 'fortification' ? 'fortification' : target.unit.type,
+        targetName: target.type === 'fortification' ? 'Fortification' : (target.unit.designation || target.unit.type),
+        targetId: target.unit.id,
         targetPlayerId: target.unit.playerId,
+        targetMaxHp: target.unit.max_hp,
         roll
       });
 
@@ -106,8 +111,11 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
         type: 'damage',
         side: target.unit.side,
         mechType: target.type === 'fortification' ? 'fortification' : target.unit.type,
+        mechName: target.type === 'fortification' ? 'Fortification' : (target.unit.designation || target.unit.type),
+        mechId: target.unit.id,
         damage: roll,
         hpRemaining: Math.max(0, target.unit.hp),
+        maxHp: target.unit.max_hp,
         playerId: target.unit.playerId
       });
 
@@ -117,6 +125,8 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
           type: 'destroyed',
           side: target.unit.side,
           mechType: target.type === 'fortification' ? 'fortification' : target.unit.type,
+          mechName: target.type === 'fortification' ? 'Fortification' : (target.unit.designation || target.unit.type),
+          mechId: target.unit.id,
           playerId: target.unit.playerId
         });
 
@@ -193,6 +203,48 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
   // Remove the side/playerId tags we added before returning
   const cleanMech = m => ({ id: m.id, type: m.type, hp: m.hp, max_hp: m.max_hp, owner_id: m.owner_id, designation: m.designation });
 
+  // Build mech status summary for each player
+  const mechStatus = {};
+
+  // Track attacker mechs
+  mechStatus[attackerId] = attackers.map(m => {
+    const surviving = activeAttackers.find(a => a.id === m.id);
+    return {
+      id: m.id,
+      name: m.designation || m.type,
+      type: m.type,
+      destroyed: !surviving,
+      hp: surviving ? surviving.hp : 0,
+      maxHp: m.max_hp
+    };
+  });
+
+  // Track defender mechs
+  mechStatus[defenderId] = defenders.map(m => {
+    const surviving = activeDefenders.find(d => d.id === m.id);
+    return {
+      id: m.id,
+      name: m.designation || m.type,
+      type: m.type,
+      destroyed: !surviving,
+      hp: surviving ? surviving.hp : 0,
+      maxHp: m.max_hp
+    };
+  });
+
+  // Track fortification if it existed
+  let fortificationStatus = null;
+  if (fortification) {
+    fortificationStatus = {
+      name: 'Fortification',
+      type: 'fortification',
+      destroyed: !activeFort || activeFort.hp <= 0,
+      hp: activeFort ? Math.max(0, activeFort.hp) : 0,
+      maxHp: FORT_HP,
+      defenderId: defenderId
+    };
+  }
+
   return {
     survivingAttackers: activeAttackers.map(cleanMech),
     survivingDefenders: activeDefenders.map(cleanMech),
@@ -203,7 +255,9 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
     defenderId,
     attackerCasualties,
     defenderCasualties,
-    detailedLog
+    detailedLog,
+    mechStatus,
+    fortificationStatus
   };
 }
 
@@ -221,6 +275,11 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
 
   // Get list of all players involved
   const playerIds = Object.keys(forcesByOwner).map(Number);
+
+  // Include defender in participants if they have a fortification (even without mechs)
+  if (defenderId && fortification && !playerIds.includes(defenderId)) {
+    playerIds.push(defenderId);
+  }
 
   // Start with the defender's forces
   let currentDefender = defenderId;
@@ -252,7 +311,9 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
       winner: result.winner,
       winnerId: result.winnerId,
       attackerCasualties: result.attackerCasualties,
-      defenderCasualties: result.defenderCasualties
+      defenderCasualties: result.defenderCasualties,
+      mechStatus: result.mechStatus,
+      fortificationStatus: result.fortificationStatus
     });
 
     totalAttackerCasualties += result.attackerCasualties;
@@ -285,14 +346,18 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
     };
   }
 
+  // Determine final owner - either has surviving mechs OR surviving fortification
+  const hasSurvivingForces = currentDefenderMechs.length > 0 || (currentFort && currentFort.hp > 0);
+  const finalOwner = hasSurvivingForces ? currentDefender : null;
+
   return {
-    finalOwner: currentDefenderMechs.length > 0 ? currentDefender : null,
+    finalOwner,
     survivingMechs: currentDefenderMechs,
     fortification: currentFort,
     results,
     battles,
     participants: playerIds,
-    winnerId: currentDefenderMechs.length > 0 ? currentDefender : null,
+    winnerId: finalOwner,
     originalDefenderId: defenderId,
     totalAttackerCasualties,
     totalDefenderCasualties: initialDefenderCount - currentDefenderMechs.length

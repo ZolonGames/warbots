@@ -5,9 +5,9 @@ const { MECH_TYPES } = require('./mapGenerator');
 
 // Building costs
 const BUILDING_COSTS = {
-  mining: 5,
-  factory: 10,
-  fortification: 8
+  mining: 10,
+  factory: 30,
+  fortification: 25
 };
 
 /**
@@ -257,10 +257,13 @@ function resolveCombats(gameId) {
       db.prepare(`
         UPDATE planets SET owner_id = ? WHERE id = ?
       `).run(result.finalOwner, planet.id);
-    }
 
-    // Update or remove fortification
-    if (planet && fortification) {
+      // Destroy ALL buildings on the captured planet
+      db.prepare(`
+        DELETE FROM buildings WHERE planet_id = ?
+      `).run(planet.id);
+    } else if (planet && fortification) {
+      // Planet not captured - just update or remove fortification
       if (result.fortification && result.fortification.hp > 0) {
         db.prepare(`
           UPDATE buildings SET hp = ? WHERE id = ?
@@ -322,16 +325,21 @@ function addBattleLog(gameId, turnNumber, x, y, result, captureInfo = null) {
 /**
  * Add a capture log entry (for peaceful captures)
  */
-function addCaptureLog(gameId, turnNumber, x, y, newOwnerId) {
+function addCaptureLog(gameId, turnNumber, x, y, newOwnerId, previousOwnerId, planetName) {
+  const detailedLog = JSON.stringify({
+    previousOwnerId: previousOwnerId,
+    planetName: planetName
+  });
+
   db.prepare(`
     INSERT INTO combat_logs (game_id, turn_number, x, y, log_type, participants, winner_id, attacker_id, defender_id, attacker_casualties, defender_casualties, detailed_log)
-    VALUES (?, ?, ?, ?, 'capture', ?, ?, ?, NULL, 0, 0, NULL)
-  `).run(gameId, turnNumber, x, y, JSON.stringify([newOwnerId]), newOwnerId, newOwnerId);
+    VALUES (?, ?, ?, ?, 'capture', ?, ?, ?, ?, 0, 0, ?)
+  `).run(gameId, turnNumber, x, y, JSON.stringify([newOwnerId]), newOwnerId, newOwnerId, previousOwnerId, detailedLog);
 }
 
 /**
- * Capture undefended planets
- * When mechs occupy a planet with no opposing forces, they capture it
+ * Capture undefended planets (or planets defended only by fortifications)
+ * When mechs occupy a planet with no opposing mechs, they may need to destroy fortifications first
  */
 function capturePlanets(gameId) {
   const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
@@ -343,39 +351,128 @@ function capturePlanets(gameId) {
   for (const planet of planets) {
     // Get all mechs on this planet
     const mechsOnPlanet = db.prepare(`
-      SELECT DISTINCT owner_id FROM mechs WHERE game_id = ? AND x = ? AND y = ?
+      SELECT * FROM mechs WHERE game_id = ? AND x = ? AND y = ?
     `).all(gameId, planet.x, planet.y);
 
+    // Get unique owners
+    const ownerIds = [...new Set(mechsOnPlanet.map(m => m.owner_id))];
+
     // If there are mechs and they all belong to the same owner
-    if (mechsOnPlanet.length === 1) {
-      const newOwnerId = mechsOnPlanet[0].owner_id;
+    if (ownerIds.length === 1) {
+      const newOwnerId = ownerIds[0];
 
-      // If the owner is different from current planet owner, capture it
+      // If the owner is different from current planet owner, attempt capture
       if (newOwnerId !== planet.owner_id) {
-        const previousOwnerId = planet.owner_id;
+        // Check if there's a fortification defending
+        const fortification = db.prepare(`
+          SELECT * FROM buildings WHERE planet_id = ? AND type = 'fortification'
+        `).get(planet.id);
 
-        db.prepare(`
-          UPDATE planets SET owner_id = ? WHERE id = ?
-        `).run(newOwnerId, planet.id);
+        if (fortification) {
+          // Fortification defends! Must resolve combat first
+          const forcesByOwner = {
+            [newOwnerId]: { mechs: mechsOnPlanet }
+          };
 
-        addCaptureLog(gameId, turnNumber, planet.x, planet.y, newOwnerId);
+          // Resolve combat with just fortification defending (no mechs)
+          const result = resolveMultiCombat(forcesByOwner, fortification, planet.owner_id);
 
-        // Log planet_lost for previous owner (if there was one)
-        if (previousOwnerId) {
-          addEventLog(gameId, turnNumber, 'planet_lost', previousOwnerId, {
-            x: planet.x,
-            y: planet.y,
+          // Determine if planet was captured during battle
+          const planetCaptured = result.finalOwner !== null && result.finalOwner !== planet.owner_id;
+          const captureInfo = planetCaptured ? {
             planetId: planet.id,
             planetName: planet.name,
-            capturedBy: newOwnerId
-          });
-        }
+            previousOwner: planet.owner_id,
+            newOwner: result.finalOwner
+          } : null;
 
-        console.log(`Planet at (${planet.x}, ${planet.y}) captured by player ${newOwnerId}`);
+          // Store detailed battle log
+          addBattleLog(gameId, turnNumber, planet.x, planet.y, result, captureInfo);
+
+          // Remove all destroyed mechs at this tile
+          db.prepare(`
+            DELETE FROM mechs WHERE game_id = ? AND x = ? AND y = ?
+          `).run(gameId, planet.x, planet.y);
+
+          // Add back surviving mechs with updated HP
+          const insertMech = db.prepare(`
+            INSERT INTO mechs (game_id, owner_id, type, hp, max_hp, x, y, designation)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          for (const mech of result.survivingMechs) {
+            insertMech.run(gameId, mech.owner_id, mech.type, mech.hp, mech.max_hp, planet.x, planet.y, mech.designation);
+          }
+
+          // Update or remove fortification
+          if (result.fortification && result.fortification.hp > 0) {
+            db.prepare(`
+              UPDATE buildings SET hp = ? WHERE id = ?
+            `).run(result.fortification.hp, fortification.id);
+          } else {
+            db.prepare(`
+              DELETE FROM buildings WHERE id = ?
+            `).run(fortification.id);
+          }
+
+          // If attackers won, capture planet and destroy ALL buildings
+          if (planetCaptured) {
+            const previousOwnerId = planet.owner_id;
+
+            db.prepare(`
+              UPDATE planets SET owner_id = ? WHERE id = ?
+            `).run(result.finalOwner, planet.id);
+
+            // Destroy ALL buildings on the captured planet
+            db.prepare(`
+              DELETE FROM buildings WHERE planet_id = ?
+            `).run(planet.id);
+
+            // Log planet_lost for previous owner
+            if (previousOwnerId) {
+              addEventLog(gameId, turnNumber, 'planet_lost', previousOwnerId, {
+                x: planet.x,
+                y: planet.y,
+                planetId: planet.id,
+                planetName: planet.name,
+                capturedBy: result.finalOwner
+              });
+            }
+
+            console.log(`Planet at (${planet.x}, ${planet.y}) captured by player ${result.finalOwner} after destroying fortification`);
+          }
+        } else {
+          // No fortification - peaceful capture
+          const previousOwnerId = planet.owner_id;
+
+          db.prepare(`
+            UPDATE planets SET owner_id = ? WHERE id = ?
+          `).run(newOwnerId, planet.id);
+
+          // Destroy ALL buildings on the captured planet
+          db.prepare(`
+            DELETE FROM buildings WHERE planet_id = ?
+          `).run(planet.id);
+
+          addCaptureLog(gameId, turnNumber, planet.x, planet.y, newOwnerId, previousOwnerId, planet.name);
+
+          // Log planet_lost for previous owner (if there was one)
+          if (previousOwnerId) {
+            addEventLog(gameId, turnNumber, 'planet_lost', previousOwnerId, {
+              x: planet.x,
+              y: planet.y,
+              planetId: planet.id,
+              planetName: planet.name,
+              capturedBy: newOwnerId
+            });
+          }
+
+          console.log(`Planet at (${planet.x}, ${planet.y}) captured by player ${newOwnerId}`);
+        }
       }
     }
-    // If mechsOnPlanet.length === 0, no mechs present - keep current owner
-    // If mechsOnPlanet.length > 1, multiple owners - contested, handled by combat
+    // If ownerIds.length === 0, no mechs present - keep current owner
+    // If ownerIds.length > 1, multiple owners - contested, handled by combat
   }
 }
 
@@ -556,6 +653,9 @@ function healMechs(gameId, turnNumber) {
  * Check and mark eliminated players
  */
 function checkEliminations(gameId) {
+  const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
+  const turnNumber = game.current_turn;
+
   // Players with no planets and no mechs are eliminated
   // But players with mechs but no planets can respawn
 
@@ -567,12 +667,36 @@ function checkEliminations(gameId) {
     WHERE gp.game_id = ? AND gp.is_eliminated = 0
   `).all(gameId);
 
+  // Get all players for broadcasting defeat message
+  const allPlayers = db.prepare(`
+    SELECT id FROM game_players WHERE game_id = ?
+  `).all(gameId);
+
   for (const player of players) {
     if (player.planet_count === 0 && player.mech_count === 0) {
       // Truly eliminated - no planets and no mechs
       db.prepare(`
         UPDATE game_players SET is_eliminated = 1 WHERE id = ?
       `).run(player.id);
+
+      // Log defeat event for the eliminated player
+      addEventLog(gameId, turnNumber, 'defeat', player.id, {
+        empireColor: player.empire_color,
+        empireName: player.empire_name
+      });
+
+      // Log defeat announcement for ALL players
+      for (const p of allPlayers) {
+        if (p.id !== player.id) {
+          addEventLog(gameId, turnNumber, 'player_defeated', p.id, {
+            defeatedPlayerId: player.id,
+            defeatedEmpireName: player.empire_name,
+            defeatedEmpireColor: player.empire_color
+          });
+        }
+      }
+
+      console.log(`Player ${player.id} (${player.empire_name}) has been eliminated`);
     }
     // If player has mechs but no planets, they can still respawn by capturing a planet
   }
@@ -582,6 +706,9 @@ function checkEliminations(gameId) {
  * Check if game has a winner
  */
 function checkWinCondition(gameId) {
+  const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
+  const turnNumber = game.current_turn;
+
   // Count remaining non-eliminated players
   const remainingPlayers = db.prepare(`
     SELECT gp.*, u.display_name
@@ -591,7 +718,28 @@ function checkWinCondition(gameId) {
   `).all(gameId);
 
   if (remainingPlayers.length === 1) {
-    return remainingPlayers[0];
+    const winner = remainingPlayers[0];
+
+    // Log victory event for the winner
+    addEventLog(gameId, turnNumber, 'victory', winner.id, {
+      empireColor: winner.empire_color,
+      empireName: winner.empire_name
+    });
+
+    // Log victory announcement for all defeated players (so they see it in observer mode)
+    const defeatedPlayers = db.prepare(`
+      SELECT id FROM game_players WHERE game_id = ? AND is_eliminated = 1
+    `).all(gameId);
+
+    for (const p of defeatedPlayers) {
+      addEventLog(gameId, turnNumber, 'game_won', p.id, {
+        winnerPlayerId: winner.id,
+        winnerEmpireName: winner.empire_name,
+        winnerEmpireColor: winner.empire_color
+      });
+    }
+
+    return winner;
   }
 
   return null;

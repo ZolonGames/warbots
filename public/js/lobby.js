@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('user-name').textContent = authData.user.displayName;
 
   // Load games
-  await Promise.all([loadAvailableGames(), loadMyGames()]);
+  await Promise.all([loadAvailableGames(), loadMyGames(), loadFinishedGames()]);
 
   // Set up create game form
   document.getElementById('create-game-form').addEventListener('submit', handleCreateGame);
@@ -64,59 +64,127 @@ async function loadAvailableGames() {
   }
 }
 
+async function refreshAvailableGames() {
+  const btn = document.getElementById('refresh-games');
+  btn.disabled = true;
+  btn.textContent = 'Refreshing...';
+
+  try {
+    await loadAvailableGames();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+  }
+}
+
 async function loadMyGames() {
   const container = document.getElementById('my-games-container');
 
   try {
-    const games = await api.getMyGames();
+    const allGames = await api.getMyGames();
+    // Filter to only active games (not finished)
+    const games = allGames.filter(g => g.status !== 'finished');
 
     if (games.length === 0) {
-      container.innerHTML = '<p class="empty">You\'re not in any games yet.</p>';
+      container.innerHTML = '<p class="empty">You\'re not in any active games.</p>';
       return;
     }
 
-    container.innerHTML = games.map(game => `
-      <div class="game-card">
-        <div class="game-card-info">
-          <h4>${escapeHtml(game.name)}</h4>
-          <p class="empire-info" style="color: ${game.empire_color || '#888'}">
-            ${escapeHtml(game.empire_name || 'Unknown Empire')}
-          </p>
-          <p>
-            Turn ${game.current_turn} |
-            ${game.status === 'waiting' ? 'Waiting for players' : 'In progress'} |
-            <span class="players">${game.player_count}/${game.max_players} players</span>
-          </p>
-          ${game.status === 'active' ? `
-            <p class="game-stats">
-              <span class="stat-planets">${game.planet_count} planets</span> |
-              <span class="stat-mechs">${game.mech_count} mechs</span> |
-              <span class="stat-credits">${game.credits} credits</span> |
-              <span class="stat-income">+${game.income}/turn</span>
-            </p>
-          ` : ''}
-        </div>
-        <div class="game-card-actions">
-          ${game.status === 'waiting' && game.is_host ?
-            `<button class="btn btn-small" onclick="startGame(${game.id})"
-              ${game.player_count < 2 ? 'disabled title="Need at least 2 players"' : ''}>
-              Start
-            </button>` : ''
-          }
-          <a href="/game.html?id=${game.id}" class="btn btn-primary btn-small">
-            ${game.status === 'waiting' ? 'View' : 'Play'}
-          </a>
-          ${game.is_host ?
-            `<button class="btn btn-danger btn-small" onclick="confirmDeleteGame(${game.id}, '${escapeHtml(game.name).replace(/'/g, "\\'")}')">
-              Delete
-            </button>` : ''
-          }
-        </div>
-      </div>
-    `).join('');
+    container.innerHTML = games.map(game => renderGameCard(game)).join('');
   } catch (error) {
     container.innerHTML = `<p class="error">Failed to load your games: ${error.message}</p>`;
   }
+}
+
+async function loadFinishedGames() {
+  const container = document.getElementById('finished-games-container');
+
+  try {
+    const allGames = await api.getMyGames();
+    // Filter to only finished games
+    const games = allGames.filter(g => g.status === 'finished');
+
+    if (games.length === 0) {
+      container.innerHTML = '<p class="empty">No finished games.</p>';
+      return;
+    }
+
+    container.innerHTML = games.map(game => renderGameCard(game)).join('');
+  } catch (error) {
+    container.innerHTML = `<p class="error">Failed to load finished games: ${error.message}</p>`;
+  }
+}
+
+function renderGameCard(game) {
+  // Determine status badge
+  let statusBadge = '';
+  if (game.is_victor) {
+    statusBadge = '<span class="game-status-badge victor">Victor</span>';
+  } else if (game.is_eliminated) {
+    statusBadge = '<span class="game-status-badge defeated">Defeated</span>';
+  } else if (game.status === 'finished') {
+    statusBadge = '<span class="game-status-badge finished">Finished</span>';
+  }
+
+  // Determine status text
+  let statusText;
+  if (game.status === 'waiting') {
+    statusText = 'Waiting for players';
+  } else if (game.status === 'finished') {
+    statusText = 'Game Over';
+  } else {
+    statusText = 'In progress';
+  }
+
+  // Determine button text
+  let buttonText;
+  if (game.status === 'waiting') {
+    buttonText = 'View';
+  } else if (game.status === 'finished' || game.is_eliminated || game.is_victor) {
+    buttonText = 'Observe';
+  } else {
+    buttonText = 'Play';
+  }
+
+  return `
+    <div class="game-card">
+      <div class="game-card-info">
+        <h4>${escapeHtml(game.name)}${statusBadge}</h4>
+        <p class="empire-info" style="color: ${game.empire_color || '#888'}">
+          ${escapeHtml(game.empire_name || 'Unknown Empire')}
+        </p>
+        <p>
+          Turn ${game.current_turn} |
+          ${statusText} |
+          <span class="players">${game.player_count}/${game.max_players} players</span>
+        </p>
+        ${game.status !== 'waiting' ? `
+          <p class="game-stats">
+            <span class="stat-planets">${game.planet_count} planets</span> |
+            <span class="stat-mechs">${game.mech_count} mechs</span> |
+            <span class="stat-credits">${game.credits} credits</span> |
+            <span class="stat-income">+${game.income}/turn</span>
+          </p>
+        ` : ''}
+      </div>
+      <div class="game-card-actions">
+        ${game.status === 'waiting' && game.is_host ?
+          `<button class="btn btn-small" onclick="startGame(${game.id})"
+            ${game.player_count < 2 ? 'disabled title="Need at least 2 players"' : ''}>
+            Start
+          </button>` : ''
+        }
+        <a href="/game.html?id=${game.id}" class="btn btn-primary btn-small">
+          ${buttonText}
+        </a>
+        ${game.is_host ?
+          `<button class="btn btn-danger btn-small" onclick="confirmDeleteGame(${game.id}, '${escapeHtml(game.name).replace(/'/g, "\\'")}')">
+            Delete
+          </button>` : ''
+        }
+      </div>
+    </div>
+  `;
 }
 
 async function handleCreateGame(e) {
@@ -268,7 +336,7 @@ async function deleteGame(gameId) {
   try {
     await api.deleteGame(gameId);
     // Reload the games lists
-    await Promise.all([loadAvailableGames(), loadMyGames()]);
+    await Promise.all([loadAvailableGames(), loadMyGames(), loadFinishedGames()]);
   } catch (error) {
     alert('Failed to delete game: ' + error.message);
   }
