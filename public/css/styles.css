@@ -956,6 +956,7 @@ a:hover {
   min-width: 200px;
   font-size: 16px;
   padding: 12px 24px;
+  text-align: center;
 }
 
 .log-entry {

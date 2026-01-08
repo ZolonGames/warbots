@@ -1605,7 +1605,12 @@ function showTurnAnnouncement(turnNumber, transitionType = 'turn') {
     }
 
     // Start the animated turn summary after turn announcement
-    showTurnSummary(turnNumber - 1, transitionType); // Show events from the previous turn that just resolved
+    // When game ends (defeat/victory), the turn doesn't advance, so show current turn's events
+    // For normal turns, show the previous turn that just resolved
+    const summaryTurn = (transitionType === 'defeat' || transitionType === 'victory')
+      ? turnNumber
+      : turnNumber - 1;
+    showTurnSummary(summaryTurn, transitionType);
   }, 2500);
 }
 
@@ -1614,26 +1619,15 @@ let eventRevealQueue = [];
 let isRevealingEvents = false;
 
 function showTurnSummary(turnNumber, transitionType = 'turn') {
-  if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
-    // If no events and observer mode, skip directly
-    if (transitionType === 'defeat' || transitionType === 'victory') {
-      enterObserverMode();
-    }
+  // Don't show turn summary for game start (turn 0 doesn't exist)
+  if (turnNumber <= 0) {
     return;
   }
 
   // Get events for this specific turn (the turn that just resolved)
-  const turnEvents = gameState.combatLogs.filter(log =>
+  const turnEvents = (gameState.combatLogs || []).filter(log =>
     log.turnNumber === turnNumber && log.logType !== 'turn_start'
   );
-
-  if (turnEvents.length === 0) {
-    // If no events and observer mode, skip directly
-    if (transitionType === 'defeat' || transitionType === 'victory') {
-      enterObserverMode();
-    }
-    return;
-  }
 
   // Open the turn summary popup
   const overlay = document.getElementById('turn-summary-overlay');
@@ -1754,6 +1748,11 @@ function showTurnSummary(turnNumber, transitionType = 'turn') {
     for (const log of victoryEvents) {
       eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
     }
+  }
+
+  // If no events occurred, show a message
+  if (turnEvents.length === 0) {
+    eventRevealQueue.push({ type: 'event', html: '<div class="log-entry log-empty">No important events occurred.</div>' });
   }
 
   // Start revealing events

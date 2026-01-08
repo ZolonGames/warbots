@@ -86,8 +86,10 @@ router.get('/games/:id/state', (req, res) => {
     `).all(gameId);
 
     // Get all combat logs for the game (all turns), ordered by turn desc then id asc
-    // For finished games, include all turns; for active games, exclude current turn (not yet resolved)
-    const maxTurn = game.status === 'finished' ? game.current_turn + 1 : game.current_turn;
+    // For finished games or eliminated players, include current turn (they need to see what happened)
+    // For active players, exclude current turn (not yet resolved)
+    const includeCurrentTurn = game.status === 'finished' || player.is_eliminated === 1;
+    const maxTurn = includeCurrentTurn ? game.current_turn + 1 : game.current_turn;
     const rawCombatLogs = db.prepare(`
       SELECT * FROM combat_logs
       WHERE game_id = ? AND turn_number < ?
