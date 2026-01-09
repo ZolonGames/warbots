@@ -1269,13 +1269,13 @@ function handleTileHover(tile, event) {
   if (planet) {
     const planetName = planet.name || (planet.is_homeworld ? 'Homeworld' : 'Planet');
     html += `<strong>${planetName}</strong><br>`;
-    html += `${planet.is_homeworld ? 'Homeworld' : 'Planet'} - Income: ${planet.base_income}<br>`;
-    // Show owner with colored empire name on its own line
+    // Show owner with colored empire name directly under planet name
     if (planet.owner_id !== null) {
       html += `${coloredPlayerName(planet.owner_id)}<br>`;
     } else {
       html += `<span style="color: #888;">Neutral</span><br>`;
     }
+    html += `${planet.is_homeworld ? 'Homeworld' : 'Planet'} - Income: ${planet.base_income}<br>`;
     if (planet.buildings && planet.buildings.length > 0) {
       html += `Buildings: ${planet.buildings.map(b => b.type).join(', ')}`;
     }
