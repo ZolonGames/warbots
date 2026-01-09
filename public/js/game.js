@@ -1276,7 +1276,8 @@ function handleTileHover(tile, event) {
       html += `<span style="color: #888;">Neutral</span><br>`;
     }
     html += `${planet.is_homeworld ? 'Homeworld' : 'Planet'} - Income: ${planet.base_income}<br>`;
-    if (planet.buildings && planet.buildings.length > 0) {
+    // Only show buildings for planets you own
+    if (planet.owner_id === playerId && planet.buildings && planet.buildings.length > 0) {
       const buildingIcons = {
         mining: '/assets/Mining Colony.png',
         factory: '/assets/Factory.png',
