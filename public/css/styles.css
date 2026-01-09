@@ -1802,6 +1802,12 @@ a:hover {
   margin-right: 6px;
 }
 
+#map-tooltip .stat-icon {
+  width: 42px;
+  height: 42px;
+  margin-right: 4px;
+}
+
 /* Lobby game card status badges */
 .game-status-badge {
   font-size: 10px;
