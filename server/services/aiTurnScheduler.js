@@ -1,6 +1,7 @@
 const { db } = require('../config/database');
 const { generateAIOrders } = require('./aiDecision');
 const { processTurn } = require('./turnProcessor');
+const aiLogger = require('./aiLogger');
 
 // Store scheduled AI turns to prevent duplicates
 const scheduledAITurns = new Map(); // gameId -> Set of aiPlayerIds
@@ -33,6 +34,9 @@ function scheduleAITurns(gameId) {
   if (aiPlayers.length === 0) {
     return;
   }
+
+  // Log new turn start for AI players
+  aiLogger.logTurnStart(gameId, game.current_turn);
 
   // Initialize scheduled set for this game if needed
   if (!scheduledAITurns.has(gameId)) {
@@ -77,6 +81,9 @@ function submitAITurn(gameId, aiPlayerId) {
       return;
     }
 
+    // Log AI processing start
+    aiLogger.logAIProcessingStart(aiPlayer.empire_name, aiPlayerId, gameId);
+
     // Generate AI orders
     console.log(`AI ${aiPlayer.empire_name} generating orders for turn ${game.current_turn}...`);
     const orders = generateAIOrders(gameId, aiPlayer);
@@ -85,6 +92,7 @@ function submitAITurn(gameId, aiPlayerId) {
     const validationResult = validateAIOrders(orders, aiPlayer, game);
     if (!validationResult.valid) {
       console.error(`AI orders validation failed: ${validationResult.error}`);
+      aiLogger.logError(aiPlayer.empire_name, validationResult.error);
       // Submit empty orders if validation fails
       orders.moves = [];
       orders.builds = [];
@@ -102,6 +110,7 @@ function submitAITurn(gameId, aiPlayerId) {
     `).run(aiPlayer.id);
 
     console.log(`AI ${aiPlayer.empire_name} submitted turn with ${orders.moves?.length || 0} moves and ${orders.builds?.length || 0} builds`);
+    aiLogger.logTurnSubmit(aiPlayer.empire_name, orders.moves?.length || 0, orders.builds?.length || 0);
 
     // Check if all players have submitted
     const pendingPlayers = db.prepare(`

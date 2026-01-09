@@ -1,6 +1,7 @@
 const { db } = require('../config/database');
 const { calculateVisibility, calculateIncome, calculateIncomeBreakdown } = require('./visibilityCalc');
 const { MECH_TYPES } = require('./mapGenerator');
+const aiLogger = require('./aiLogger');
 
 // Building costs
 const BUILDING_COSTS = {
@@ -33,6 +34,9 @@ function generateAIOrders(gameId, aiPlayer) {
   // Analyze the situation
   const analysis = analyzeGameState(gameState, aiPlayer);
 
+  // Log analysis
+  aiLogger.logAnalysis(aiPlayer.empire_name, analysis);
+
   const orders = {
     moves: [],
     builds: []
@@ -41,6 +45,16 @@ function generateAIOrders(gameId, aiPlayer) {
   // Generate build orders first (so we know what credits we'll have left)
   const buildOrders = generateBuildOrders(gameState, aiPlayer, analysis);
   orders.builds = buildOrders;
+
+  // Log each build order
+  for (const build of buildOrders) {
+    const planet = db.prepare('SELECT * FROM planets WHERE id = ?').get(build.planetId);
+    if (build.type === 'mech') {
+      aiLogger.logBuildMech(aiPlayer.empire_name, build.mechType, planet?.name || 'Unknown', planet?.x || 0, planet?.y || 0);
+    } else {
+      aiLogger.logBuildBuilding(aiPlayer.empire_name, build.buildingType, planet?.name || 'Unknown', planet?.x || 0, planet?.y || 0);
+    }
+  }
 
   // Calculate remaining credits after builds
   let buildCost = 0;
@@ -55,6 +69,14 @@ function generateAIOrders(gameId, aiPlayer) {
   // Generate move orders
   const moveOrders = generateMoveOrders(gameState, aiPlayer, analysis);
   orders.moves = moveOrders;
+
+  // Log each move order
+  for (const move of moveOrders) {
+    const mech = db.prepare('SELECT * FROM mechs WHERE id = ?').get(move.mechId);
+    if (mech) {
+      aiLogger.logMove(aiPlayer.empire_name, mech.designation, mech.type, mech.x, mech.y, move.toX, move.toY);
+    }
+  }
 
   return orders;
 }
