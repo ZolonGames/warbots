@@ -357,6 +357,50 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
   const hasSurvivingForces = currentDefenderMechs.length > 0 || (currentFort && currentFort.hp > 0);
   const finalOwner = hasSurvivingForces ? currentDefender : null;
 
+  // Build combined final mechStatus from all battles
+  // This aggregates the final state of each mech across all sequential battles
+  const finalMechStatus = {};
+  const MECH_MAX_HP = { light: 5, medium: 10, heavy: 20, assault: 40 };
+
+  for (const battle of battles) {
+    // For each player in this battle, update their mech status
+    for (const playerId of [battle.attackerId, battle.defenderId]) {
+      if (playerId == null) continue;
+
+      const battleMechList = battle.mechStatus?.[playerId] || [];
+
+      if (!finalMechStatus[playerId]) {
+        // First time seeing this player - use their status from this battle
+        finalMechStatus[playerId] = battleMechList;
+      } else {
+        // Player was in a previous battle - update with latest status
+        // Mechs that were destroyed in later battles need to be marked as such
+        for (const mech of battleMechList) {
+          const existing = finalMechStatus[playerId].find(m => m.id == mech.id);
+          if (existing) {
+            // Update existing mech with latest status
+            existing.destroyed = mech.destroyed;
+            existing.hp = mech.hp;
+          } else {
+            // New mech (shouldn't happen but add it anyway)
+            finalMechStatus[playerId].push(mech);
+          }
+        }
+      }
+    }
+  }
+
+  // Also track the final fortification status
+  let finalFortificationStatus = null;
+  if (fortification) {
+    // Get the most recent fortification status from battles
+    for (const battle of battles) {
+      if (battle.fortificationStatus) {
+        finalFortificationStatus = battle.fortificationStatus;
+      }
+    }
+  }
+
   return {
     finalOwner,
     survivingMechs: currentDefenderMechs,
@@ -367,7 +411,9 @@ function resolveMultiCombat(forcesByOwner, fortification, defenderId) {
     winnerId: finalOwner,
     originalDefenderId: defenderId,
     totalAttackerCasualties,
-    totalDefenderCasualties: initialDefenderCount - currentDefenderMechs.length
+    totalDefenderCasualties: initialDefenderCount - currentDefenderMechs.length,
+    finalMechStatus,
+    finalFortificationStatus
   };
 }
 

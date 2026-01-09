@@ -786,12 +786,13 @@ function formatBattleStatusReports(log) {
   const battles = log.detailedLog?.battles || log.detailedLog || [];
   if (!Array.isArray(battles) || battles.length === 0) return '';
 
-  // Get mechStatus from the first battle (for 2-player combat)
-  const battle = battles[0];
-  if (!battle || !battle.mechStatus) return '';
+  // Use finalMechStatus if available (aggregated across all battles), otherwise fall back to first battle
+  const mechStatus = log.detailedLog?.finalMechStatus || battles[0]?.mechStatus;
+  if (!mechStatus) return '';
 
   const participants = log.participants || [];
-  const fortStatus = battle.fortificationStatus;
+  // Use finalFortificationStatus if available, otherwise fall back to first battle
+  const fortStatus = log.detailedLog?.finalFortificationStatus || battles[0]?.fortificationStatus;
 
   for (const playerId of participants) {
     const playerName = getPlayerName(playerId);
@@ -799,7 +800,7 @@ function formatBattleStatusReports(log) {
     const isWinner = playerId === log.winnerId;
     const reportTitle = isWinner ? 'Status Report' : 'Casualty Report';
 
-    const mechList = battle.mechStatus[playerId] || [];
+    const mechList = mechStatus[playerId] || [];
     // Check if this player had the fortification
     const hadFort = fortStatus && fortStatus.defenderId === playerId;
 
@@ -946,12 +947,13 @@ function getBattleStatusReportItems(log) {
   const battles = log.detailedLog?.battles || log.detailedLog || [];
   if (!Array.isArray(battles) || battles.length === 0) return items;
 
-  // Get mechStatus from the first battle
-  const battle = battles[0];
-  if (!battle || !battle.mechStatus) return items;
+  // Use finalMechStatus if available (aggregated across all battles), otherwise fall back to first battle
+  const mechStatus = log.detailedLog?.finalMechStatus || battles[0]?.mechStatus;
+  if (!mechStatus) return items;
 
   const participants = log.participants || [];
-  const fortStatus = battle.fortificationStatus;
+  // Use finalFortificationStatus if available, otherwise fall back to first battle
+  const fortStatus = log.detailedLog?.finalFortificationStatus || battles[0]?.fortificationStatus;
 
   for (const playerId of participants) {
     const playerName = getPlayerName(playerId);
@@ -959,7 +961,7 @@ function getBattleStatusReportItems(log) {
     const isWinner = playerId === log.winnerId;
     const reportTitle = isWinner ? 'Status Report' : 'Casualty Report';
 
-    const mechList = battle.mechStatus[playerId] || [];
+    const mechList = mechStatus[playerId] || [];
     // Check if this player had the fortification
     const hadFort = fortStatus && fortStatus.defenderId === playerId;
 

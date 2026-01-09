@@ -317,10 +317,12 @@ function resolveCombats(gameId) {
 function addBattleLog(gameId, turnNumber, x, y, result, captureInfo = null) {
   const participants = JSON.stringify(result.participants);
 
-  // Include capture info in the detailed log
+  // Include capture info and final status in the detailed log
   const detailedLogData = {
     battles: result.battles,
-    captureInfo: captureInfo
+    captureInfo: captureInfo,
+    finalMechStatus: result.finalMechStatus,
+    finalFortificationStatus: result.finalFortificationStatus
   };
   const detailedLog = JSON.stringify(detailedLogData);
 
