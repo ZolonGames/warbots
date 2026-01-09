@@ -1270,11 +1270,11 @@ function handleTileHover(tile, event) {
     const planetName = planet.name || (planet.is_homeworld ? 'Homeworld' : 'Planet');
     html += `<strong>${planetName}</strong><br>`;
     html += `${planet.is_homeworld ? 'Homeworld' : 'Planet'} - Income: ${planet.base_income}<br>`;
-    // Show owner with colored empire name
+    // Show owner with colored empire name on its own line
     if (planet.owner_id !== null) {
-      html += `Owner: ${coloredPlayerName(planet.owner_id)}<br>`;
+      html += `${coloredPlayerName(planet.owner_id)}<br>`;
     } else {
-      html += `Owner: <span style="color: #888;">Neutral</span><br>`;
+      html += `<span style="color: #888;">Neutral</span><br>`;
     }
     if (planet.buildings && planet.buildings.length > 0) {
       html += `Buildings: ${planet.buildings.map(b => b.type).join(', ')}`;
@@ -1294,14 +1294,15 @@ function handleTileHover(tile, event) {
 
     const ownerIds = Object.keys(mechsByOwner);
     if (ownerIds.length === 1) {
-      // Single owner
+      // Single owner - show count then empire name on next line
       const ownerId = parseInt(ownerIds[0]);
-      html += `<strong>Mechs:</strong> ${mechs.length} (${coloredPlayerName(ownerId)})`;
+      html += `<strong>Mechs:</strong> ${mechs.length}<br>`;
+      html += `${coloredPlayerName(ownerId)}`;
     } else {
-      // Multiple owners
+      // Multiple owners - show each with count
       html += `<strong>Mechs:</strong><br>`;
       for (const ownerId of ownerIds) {
-        html += `&nbsp;&nbsp;${coloredPlayerName(parseInt(ownerId))}: ${mechsByOwner[ownerId]}<br>`;
+        html += `${coloredPlayerName(parseInt(ownerId))}: ${mechsByOwner[ownerId]}<br>`;
       }
     }
   }
