@@ -62,7 +62,7 @@ class GameMap {
   }
 
   loadImages() {
-    const cacheVersion = 'v2'; // Increment to bust cache
+    const cacheVersion = Date.now(); // Use timestamp to always bust cache
     const imagePaths = {
       planet1: `/assets/Planet-1.png?${cacheVersion}`,
       planet2: `/assets/Planet-2.png?${cacheVersion}`,
