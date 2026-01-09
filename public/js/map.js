@@ -62,12 +62,13 @@ class GameMap {
   }
 
   loadImages() {
+    const cacheVersion = 'v2'; // Increment to bust cache
     const imagePaths = {
-      planet1: '/assets/Planet-1.png',
-      planet2: '/assets/Planet-2.png',
-      planet3: '/assets/Planet-3.png',
-      planet5: '/assets/Planet-5.png', // Homeworld
-      ship: '/assets/Ship.png'
+      planet1: `/assets/Planet-1.png?${cacheVersion}`,
+      planet2: `/assets/Planet-2.png?${cacheVersion}`,
+      planet3: `/assets/Planet-3.png?${cacheVersion}`,
+      planet5: `/assets/Planet-5.png?${cacheVersion}`, // Homeworld
+      ship: `/assets/Ship.png?${cacheVersion}`
     };
 
     let loadedCount = 0;
