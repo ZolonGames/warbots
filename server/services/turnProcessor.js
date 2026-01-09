@@ -113,6 +113,14 @@ function processTurn(gameId) {
     addEventLog(gameId, turnNumber, 'turn_start', player.id, { turn: turnNumber });
   }
 
+  // 0. Reset negative credits to 0 (debt forgiveness to prevent unrecoverable situations)
+  for (const player of players) {
+    if (player.credits < 0) {
+      db.prepare(`UPDATE game_players SET credits = 0 WHERE id = ?`).run(player.id);
+      player.credits = 0; // Update local reference too
+    }
+  }
+
   // 1. Process movements (simultaneously)
   processMovements(gameId, ordersByPlayer);
 

@@ -209,8 +209,9 @@ function validateOrders(orders, player, game) {
     }
   }
 
-  // Check player has enough credits
-  if (totalCost > player.credits) {
+  // Check player has enough credits for build orders (only if there are builds)
+  // Players with negative credits can still submit turns with no builds
+  if (totalCost > 0 && totalCost > player.credits) {
     return { valid: false, error: `Insufficient credits (need ${totalCost}, have ${player.credits})` };
   }
 
