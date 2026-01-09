@@ -90,6 +90,27 @@ a:hover {
   background: #e03030;
 }
 
+.btn-success {
+  background: #1a6b1a;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #228b22;
+}
+
+.btn:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn:disabled:hover {
+  background: #555;
+  transform: none;
+}
+
 /* Modal styles */
 .modal-overlay {
   position: fixed;

@@ -1846,14 +1846,18 @@ function updateLobbyPanel() {
   // Show start and add AI buttons for host
   if (isHost) {
     startBtn.style.display = 'block';
-    startBtn.disabled = players.length < maxPlayers;
-    startBtn.title = players.length < maxPlayers ? `Need ${maxPlayers} players to start (${players.length}/${maxPlayers})` : '';
+    const canStart = players.length >= maxPlayers;
+    startBtn.disabled = !canStart;
+    startBtn.textContent = canStart ? 'Start Game' : `Need ${maxPlayers} players (${players.length}/${maxPlayers})`;
 
-    // Show Add AI button if there's room for more players
+    // Show Add AI button - disable and change text when full
+    addAIBtn.style.display = 'block';
     if (players.length < maxPlayers) {
-      addAIBtn.style.display = 'block';
+      addAIBtn.disabled = false;
+      addAIBtn.textContent = 'Add AI';
     } else {
-      addAIBtn.style.display = 'none';
+      addAIBtn.disabled = true;
+      addAIBtn.textContent = 'Game Full';
     }
   } else {
     startBtn.style.display = 'none';
