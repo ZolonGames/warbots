@@ -1782,6 +1782,13 @@ a:hover {
   color: var(--accent-green);
 }
 
+.stat-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  margin-right: 3px;
+}
+
 /* Lobby game card status badges */
 .game-status-badge {
   font-size: 10px;

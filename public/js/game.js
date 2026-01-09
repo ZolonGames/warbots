@@ -2385,10 +2385,10 @@ function updateObserverPanel() {
           ${statusHtml}
         </div>
         <div class="observer-player-stats">
-          <span class="stat-planets">Planets: ${player.planet_count || 0}</span>
-          <span class="stat-mechs">Mechs: ${player.mech_count || 0}</span>
-          <span class="stat-credits">Credits: ${player.credits || 0}</span>
-          <span class="stat-income">Income: ${player.income || 0}</span>
+          <span class="stat-planets"><img src="/assets/Icon-Planet.png" class="stat-icon" alt="">Planets: ${player.planet_count || 0}</span>
+          <span class="stat-mechs"><img src="/assets/Mech.png" class="stat-icon" alt="">Mechs: ${player.mech_count || 0}</span>
+          <span class="stat-credits"><img src="/assets/Credit.png" class="stat-icon" alt="">Credits: ${player.credits || 0}</span>
+          <span class="stat-income"><img src="/assets/IncomePlus.png" class="stat-icon" alt="">Income: ${player.income || 0}</span>
         </div>
       </div>
     `;
