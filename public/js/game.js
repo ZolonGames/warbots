@@ -37,6 +37,37 @@ const COSTS = {
 // Track displayed credits (may differ from server due to pending orders)
 let displayedCredits = 0;
 
+// Helper functions for persisting orders across page refreshes
+function getOrdersStorageKey(gameId, turnNumber) {
+  return `warbots_orders_${gameId}_${turnNumber}`;
+}
+
+function saveOrdersToStorage(gameId, turnNumber) {
+  const key = getOrdersStorageKey(gameId, turnNumber);
+  localStorage.setItem(key, JSON.stringify(pendingOrders));
+}
+
+function loadOrdersFromStorage(gameId, turnNumber) {
+  const key = getOrdersStorageKey(gameId, turnNumber);
+  const saved = localStorage.getItem(key);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed.moves && parsed.builds) {
+        return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved orders:', e);
+    }
+  }
+  return null;
+}
+
+function clearOrdersFromStorage(gameId, turnNumber) {
+  const key = getOrdersStorageKey(gameId, turnNumber);
+  localStorage.removeItem(key);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Get game ID from URL
   const params = new URLSearchParams(window.location.search);
@@ -85,6 +116,23 @@ async function initGame(gameId) {
 
     // Set up UI handlers
     setupUIHandlers();
+
+    // Load saved orders for this turn (if any)
+    if (gameState.status === 'active' && !gameState.isObserver) {
+      const savedOrders = loadOrdersFromStorage(gameId, gameState.currentTurn);
+      if (savedOrders) {
+        pendingOrders = savedOrders;
+        // Recalculate displayed credits based on saved build orders
+        for (const order of pendingOrders.builds) {
+          if (order.cost) {
+            displayedCredits -= order.cost;
+          }
+        }
+        updateCreditsDisplay();
+        updateOrdersList();
+        updateMovementArrows();
+      }
+    }
 
     // Check game status and show appropriate UI
     if (gameState.status === 'waiting') {
@@ -445,9 +493,16 @@ function formatBuildMechEvent(log) {
 
 function formatBuildBuildingEvent(log) {
   const data = log.detailedLog || {};
-  const buildingType = data.buildingType ? (data.buildingType.charAt(0).toUpperCase() + data.buildingType.slice(1)) : 'Unknown';
   const planetName = data.planetName || 'Unknown Planet';
   const coords = `(${data.x}, ${data.y})`;
+
+  // Map building types to display names
+  const buildingNames = {
+    mining: 'Mining Colony',
+    factory: 'Factory',
+    fortification: 'Fortification'
+  };
+  const buildingName = buildingNames[data.buildingType] || 'Unknown Building';
 
   let icon = '🏗️';
   if (data.buildingType === 'mining') icon = '⛏️';
@@ -456,7 +511,7 @@ function formatBuildBuildingEvent(log) {
 
   return `<div class="log-entry log-build">
     <span class="log-icon">${icon}</span>
-    Built <span class="building-name">${buildingType}</span> at <span class="planet-name">${planetName}</span> ${coords}
+    Built <span class="building-name">${buildingName}</span> at <span class="planet-name">${planetName}</span> ${coords}
   </div>`;
 }
 
@@ -772,12 +827,16 @@ function formatBattleStatusReports(log) {
       if (mech.destroyed) {
         html += `<div class="status-report-line destroyed">- <span style="color: ${playerColor};">${mech.name}</span> was destroyed!</div>`;
       } else {
-        const hpPercent = mech.hp / mech.maxHp;
+        // Ensure maxHp has a valid value (fallback based on type)
+        const typeMaxHp = { light: 5, medium: 10, heavy: 20, assault: 40 };
+        const maxHp = mech.maxHp || typeMaxHp[(mech.type || '').toLowerCase()] || 10;
+        const hp = typeof mech.hp === 'number' ? mech.hp : maxHp;
+        const hpPercent = hp / maxHp;
         let hpClass = 'hp-high';
         if (hpPercent <= 0.25) hpClass = 'hp-low';
         else if (hpPercent <= 0.5) hpClass = 'hp-medium';
 
-        html += `<div class="status-report-line">- <span style="color: ${playerColor};">${mech.name}</span> <span class="${hpClass}">${mech.hp}/${mech.maxHp}</span></div>`;
+        html += `<div class="status-report-line">- <span style="color: ${playerColor};">${mech.name}</span> <span class="${hpClass}">${hp}/${maxHp}</span></div>`;
       }
     }
 
@@ -943,12 +1002,16 @@ function getBattleStatusReportItems(log) {
       if (mech.destroyed) {
         mechHtml = `<div class="status-report-line destroyed">- <span style="color: ${playerColor};">${mech.name}</span> was destroyed!</div>`;
       } else {
-        const hpPercent = mech.hp / mech.maxHp;
+        // Ensure maxHp has a valid value (fallback based on type)
+        const typeMaxHp = { light: 5, medium: 10, heavy: 20, assault: 40 };
+        const maxHp = mech.maxHp || typeMaxHp[(mech.type || '').toLowerCase()] || 10;
+        const hp = typeof mech.hp === 'number' ? mech.hp : maxHp;
+        const hpPercent = hp / maxHp;
         let hpClass = 'hp-high';
         if (hpPercent <= 0.25) hpClass = 'hp-low';
         else if (hpPercent <= 0.5) hpClass = 'hp-medium';
 
-        mechHtml = `<div class="status-report-line">- <span style="color: ${playerColor};">${mech.name}</span> <span class="${hpClass}">${mech.hp}/${mech.maxHp}</span></div>`;
+        mechHtml = `<div class="status-report-line">- <span style="color: ${playerColor};">${mech.name}</span> <span class="${hpClass}">${hp}/${maxHp}</span></div>`;
       }
 
       items.push({
@@ -989,7 +1052,9 @@ function getDetailedBattleRevealItems(battles) {
         const mechColor = getPlayerColor(entry.playerId);
         const mechName = entry.mechName || entry.mechType;
         const hpRemaining = entry.hpRemaining;
-        const maxHp = entry.maxHp || 10;
+        // Determine maxHp based on type if not provided
+        const typeMaxHp = { light: 5, medium: 10, heavy: 20, assault: 40, fortification: 30 };
+        const maxHp = entry.maxHp || typeMaxHp[(entry.mechType || '').toLowerCase()] || 10;
 
         if (hpRemaining > 0) {
           const hpPercent = hpRemaining / maxHp;
@@ -1098,7 +1163,9 @@ function formatDetailedBattleLog(battles) {
         const mechColor = getPlayerColor(entry.playerId);
         const mechName = entry.mechName || entry.mechType;
         const hpRemaining = entry.hpRemaining;
-        const maxHp = entry.maxHp || 10;
+        // Determine maxHp based on type if not provided
+        const typeMaxHp = { light: 5, medium: 10, heavy: 20, assault: 40, fortification: 30 };
+        const maxHp = entry.maxHp || typeMaxHp[(entry.mechType || '').toLowerCase()] || 10;
 
         if (hpRemaining > 0) {
           const hpPercent = hpRemaining / maxHp;
@@ -1379,9 +1446,9 @@ function updateBuildButtons(planet) {
             statusEl.innerHTML = '<span class="building-active">Factory Ready</span>';
           }
         } else if (buildType === 'fortification' && fortification) {
-          // Show HP with color coding and damage dice
+          // Show HP with color coding and damage range
           const hp = fortification.hp;
-          const maxHp = 10;
+          const maxHp = 30;
           const hpPercent = hp / maxHp;
           let hpClass;
           if (hpPercent > 0.5) {
@@ -1391,7 +1458,7 @@ function updateBuildButtons(planet) {
           } else {
             hpClass = 'hp-low';
           }
-          statusEl.innerHTML = `<span class="${hpClass}">${hp}/${maxHp} HP</span> <span class="fort-dice">2d6</span>`;
+          statusEl.innerHTML = `<span class="${hpClass}">${hp}/${maxHp} HP</span><br><span class="fort-damage">Damage: 1-10</span>`;
         }
       } else if (queuedBuildings.has(buildType)) {
         btn.disabled = true;
@@ -1496,6 +1563,10 @@ function addBuildOrder(planetId, type, buildType) {
 
   updateCreditsDisplay();
   updateOrdersList();
+
+  // Save orders to localStorage for persistence
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  saveOrdersToStorage(gameId, gameState.currentTurn);
 }
 
 function addMoveOrder(mechId, toX, toY) {
@@ -1510,6 +1581,28 @@ function addMoveOrder(mechId, toX, toY) {
   pendingOrders.moves.push({ mechId, toX, toY, fromX, fromY });
   updateOrdersList();
   refreshMechsPanel();
+  updateMovementArrows();
+
+  // Save orders to localStorage for persistence
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  saveOrdersToStorage(gameId, gameState.currentTurn);
+}
+
+function updateMovementArrows() {
+  if (gameMap) {
+    gameMap.setMovementOrders(pendingOrders.moves);
+  }
+}
+
+function cancelMoveOrder(mechId) {
+  pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== mechId);
+  updateOrdersList();
+  refreshMechsPanel();
+  updateMovementArrows();
+
+  // Save orders to localStorage for persistence
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  saveOrdersToStorage(gameId, gameState.currentTurn);
 }
 
 function refreshMechsPanel() {
@@ -1622,10 +1715,15 @@ function removeOrder(type, index) {
 
   updateOrdersList();
 
-  // Refresh mechs panel if a move order was removed
+  // Refresh mechs panel and arrows if a move order was removed
   if (type === 'moves') {
     refreshMechsPanel();
+    updateMovementArrows();
   }
+
+  // Save orders to localStorage for persistence
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  saveOrdersToStorage(gameId, gameState.currentTurn);
 }
 
 function clearOrders() {
@@ -1640,6 +1738,11 @@ function clearOrders() {
   pendingOrders = { moves: [], builds: [] };
   updateOrdersList();
   refreshMechsPanel();
+  updateMovementArrows();
+
+  // Clear from localStorage
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  clearOrdersFromStorage(gameId, gameState.currentTurn);
 }
 
 async function submitTurn() {
@@ -1647,11 +1750,8 @@ async function submitTurn() {
 
   try {
     await api.submitTurn(gameId, pendingOrders);
-    // Don't use clearOrders() here - that would refund the costs!
-    // Just reset the pending orders without refunding
-    pendingOrders = { moves: [], builds: [] };
-    updateOrdersList();
-    refreshMechsPanel();
+    // Keep orders visible until turn resolves - don't clear them
+    // They will be cleared when the turn advances in refreshGameState
     showWaitingIndicator(true);
   } catch (error) {
     alert('Failed to submit turn: ' + error.message);
@@ -2237,6 +2337,16 @@ async function refreshGameState(gameId) {
     const turnChanged = previousTurn !== null && previousTurn !== undefined && gameState.currentTurn !== previousTurn;
     const gameJustEnded = previousStatus !== 'finished' && gameState.status === 'finished';
 
+    // Clear pending orders when turn advances (they've been processed)
+    if (turnChanged) {
+      // Clear orders from previous turn's storage
+      clearOrdersFromStorage(gameId, previousTurn);
+      // Reset pending orders
+      pendingOrders = { moves: [], builds: [] };
+      updateOrdersList();
+      updateMovementArrows();
+    }
+
     if (turnChanged || gameJustEnded) {
       // Check if player was just eliminated this turn
       if (!wasEliminated && gameState.isEliminated) {
@@ -2382,10 +2492,25 @@ function createMechItem(mech, tile) {
   // Check for pending move order
   const moveOrder = pendingOrders.moves.find(m => m.mechId === mech.id);
   if (moveOrder) {
+    const moveContainer = document.createElement('div');
+    moveContainer.className = 'mech-move-container';
+
     const moveText = document.createElement('span');
     moveText.className = 'mech-move-text';
     moveText.textContent = `Moving to (${moveOrder.toX}, ${moveOrder.toY})`;
-    infoContainer.appendChild(moveText);
+    moveContainer.appendChild(moveText);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'mech-cancel-btn';
+    cancelBtn.textContent = '✕';
+    cancelBtn.title = 'Cancel movement order';
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelMoveOrder(mech.id);
+    });
+    moveContainer.appendChild(cancelBtn);
+
+    infoContainer.appendChild(moveContainer);
   }
 
   item.appendChild(infoContainer);

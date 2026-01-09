@@ -206,29 +206,36 @@ function resolveCombat(attackers, defenders, fortification, attackerId, defender
   // Build mech status summary for each player
   const mechStatus = {};
 
+  // Mech max HP by type (fallback if max_hp not set)
+  const MECH_MAX_HP = { light: 5, medium: 10, heavy: 20, assault: 40 };
+
   // Track attacker mechs
   mechStatus[attackerId] = attackers.map(m => {
-    const surviving = activeAttackers.find(a => a.id === m.id);
+    // Use == for ID comparison in case of string/number mismatch
+    const surviving = activeAttackers.find(a => a.id == m.id);
+    const maxHp = m.max_hp || MECH_MAX_HP[m.type] || 10;
     return {
       id: m.id,
       name: m.designation || m.type,
       type: m.type,
       destroyed: !surviving,
-      hp: surviving ? surviving.hp : 0,
-      maxHp: m.max_hp
+      hp: surviving ? Math.max(0, surviving.hp) : 0,
+      maxHp: maxHp
     };
   });
 
   // Track defender mechs
   mechStatus[defenderId] = defenders.map(m => {
-    const surviving = activeDefenders.find(d => d.id === m.id);
+    // Use == for ID comparison in case of string/number mismatch
+    const surviving = activeDefenders.find(d => d.id == m.id);
+    const maxHp = m.max_hp || MECH_MAX_HP[m.type] || 10;
     return {
       id: m.id,
       name: m.designation || m.type,
       type: m.type,
       destroyed: !surviving,
-      hp: surviving ? surviving.hp : 0,
-      maxHp: m.max_hp
+      hp: surviving ? Math.max(0, surviving.hp) : 0,
+      maxHp: maxHp
     };
   });
 

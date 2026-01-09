@@ -44,6 +44,7 @@ class GameMap {
     this.selectedTile = null;
     this.hoveredTile = null;
     this.playerId = null; // Set by game.js to identify player's mechs
+    this.movementOrders = []; // Movement orders to draw arrows for
 
     // Event handlers
     this.onTileClick = null;
@@ -419,6 +420,62 @@ class GameMap {
     return this.colors.planetOwned[ownerId % this.colors.planetOwned.length];
   }
 
+  // Set movement orders to display arrows
+  setMovementOrders(orders) {
+    this.movementOrders = orders || [];
+    this.render();
+  }
+
+  // Draw arrows for pending movement orders
+  drawMovementArrows() {
+    if (!this.movementOrders || this.movementOrders.length === 0) return;
+
+    const ctx = this.ctx;
+    const tileSize = this.tileSize;
+
+    for (const order of this.movementOrders) {
+      // Find the mech to get its owner color
+      const mech = this.mechs.find(m => m.id === order.mechId);
+      if (!mech) continue;
+
+      const color = this.getOwnerColor(mech.owner_id);
+
+      // Calculate center positions
+      const fromX = this.panX + order.fromX * tileSize + tileSize / 2;
+      const fromY = this.panY + order.fromY * tileSize + tileSize / 2;
+      const toX = this.panX + order.toX * tileSize + tileSize / 2;
+      const toY = this.panY + order.toY * tileSize + tileSize / 2;
+
+      // Draw arrow line
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, tileSize * 0.1);
+      ctx.lineCap = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+
+      // Draw arrowhead
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      const arrowSize = Math.max(8, tileSize * 0.3);
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(
+        toX - arrowSize * Math.cos(angle - Math.PI / 6),
+        toY - arrowSize * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.lineTo(
+        toX - arrowSize * Math.cos(angle + Math.PI / 6),
+        toY - arrowSize * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
   // Zoom controls (can be called from UI buttons)
   zoomIn() {
     const newScale = Math.min(this.maxScale, this.scale * 1.2);
@@ -507,6 +564,9 @@ class GameMap {
 
     // Draw move highlights during mech drag
     this.drawMoveHighlights();
+
+    // Draw movement order arrows
+    this.drawMovementArrows();
 
     // Draw selection highlight
     if (this.selectedTile) {
