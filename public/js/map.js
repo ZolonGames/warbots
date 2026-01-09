@@ -52,8 +52,47 @@ class GameMap {
     this.onMechDragStart = null; // Called when starting to drag mechs on map
     this.onMechDragEnd = null;   // Called when ending mech drag
 
+    // Load images
+    this.images = {};
+    this.imagesLoaded = false;
+    this.loadImages();
+
     this.setupCanvas();
     this.setupEvents();
+  }
+
+  loadImages() {
+    const imagePaths = {
+      planet1: '/assets/Planet-1.png',
+      planet2: '/assets/Planet-2.png',
+      planet3: '/assets/Planet-3.png',
+      planet5: '/assets/Planet-5.png', // Homeworld
+      ship: '/assets/Ship.png'
+    };
+
+    let loadedCount = 0;
+    const totalImages = Object.keys(imagePaths).length;
+
+    for (const [key, path] of Object.entries(imagePaths)) {
+      const img = new Image();
+      img.onload = () => {
+        loadedCount++;
+        if (loadedCount === totalImages) {
+          this.imagesLoaded = true;
+          this.render();
+        }
+      };
+      img.onerror = () => {
+        console.warn(`Failed to load image: ${path}`);
+        loadedCount++;
+        if (loadedCount === totalImages) {
+          this.imagesLoaded = true;
+          this.render();
+        }
+      };
+      img.src = path;
+      this.images[key] = img;
+    }
   }
 
   setupCanvas() {
@@ -592,44 +631,63 @@ class GameMap {
   drawPlanet(planet) {
     const ctx = this.ctx;
     const tileSize = this.tileSize;
-    const px = this.panX + planet.x * tileSize + tileSize / 2;
-    const py = this.panY + planet.y * tileSize + tileSize / 2;
-    const radius = tileSize * 0.35;
+    const px = this.panX + planet.x * tileSize;
+    const py = this.panY + planet.y * tileSize;
 
-    // Planet color based on owner (homeworlds use faction color too)
-    if (planet.owner_id !== null) {
-      ctx.fillStyle = this.getOwnerColor(planet.owner_id);
+    // Select image based on planet type
+    let img;
+    if (planet.is_homeworld) {
+      img = this.images.planet5;
     } else {
-      ctx.fillStyle = this.colors.planet;
+      const income = planet.base_income || 1;
+      if (income >= 3) {
+        img = this.images.planet3;
+      } else if (income === 2) {
+        img = this.images.planet2;
+      } else {
+        img = this.images.planet1;
+      }
     }
 
-    ctx.beginPath();
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Draw the planet image
+    if (img && img.complete && img.naturalWidth > 0) {
+      const imgSize = tileSize * 0.85;
+      const offset = (tileSize - imgSize) / 2;
+      ctx.drawImage(img, px + offset, py + offset, imgSize, imgSize);
 
-    // Draw gold ring around homeworlds to distinguish them
-    if (planet.is_homeworld && tileSize >= 12) {
-      ctx.strokeStyle = this.colors.homeworld;
-      ctx.lineWidth = Math.max(1, tileSize * 0.06);
-      ctx.beginPath();
-      ctx.arc(px, py, radius + tileSize * 0.08, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Draw income indicator (small dots) - only when zoomed in enough
-    if (tileSize >= 16) {
-      const income = planet.base_income;
-      const dotRadius = Math.max(1, tileSize * 0.08);
-      const startAngle = -Math.PI / 2;
-
-      ctx.fillStyle = '#ffffff';
-      for (let i = 0; i < income; i++) {
-        const angle = startAngle + (i / income) * Math.PI * 2;
-        const dx = Math.cos(angle) * (radius + dotRadius * 2);
-        const dy = Math.sin(angle) * (radius + dotRadius * 2);
+      // Draw owner color ring around owned planets
+      if (planet.owner_id !== null) {
+        const centerX = px + tileSize / 2;
+        const centerY = py + tileSize / 2;
+        const ringRadius = imgSize / 2 + 2;
+        ctx.strokeStyle = this.getOwnerColor(planet.owner_id);
+        ctx.lineWidth = Math.max(2, tileSize * 0.08);
         ctx.beginPath();
-        ctx.arc(px + dx, py + dy, dotRadius, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else {
+      // Fallback to old circle rendering if image not loaded
+      const centerX = px + tileSize / 2;
+      const centerY = py + tileSize / 2;
+      const radius = tileSize * 0.35;
+
+      if (planet.owner_id !== null) {
+        ctx.fillStyle = this.getOwnerColor(planet.owner_id);
+      } else {
+        ctx.fillStyle = this.colors.planet;
+      }
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (planet.is_homeworld && tileSize >= 12) {
+        ctx.strokeStyle = this.colors.homeworld;
+        ctx.lineWidth = Math.max(1, tileSize * 0.06);
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius + tileSize * 0.08, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
   }
@@ -641,9 +699,32 @@ class GameMap {
     const py = this.panY + mech.y * tileSize;
 
     const color = this.getOwnerColor(mech.owner_id);
+    const img = this.images.ship;
 
-    // Draw mech icon (robot shape)
-    this.drawMechIcon(ctx, px + tileSize * 0.5, py + tileSize * 0.5, tileSize * 0.35, color);
+    // Draw ship image with color tinting
+    if (img && img.complete && img.naturalWidth > 0) {
+      const imgSize = tileSize * 0.7;
+      const offset = (tileSize - imgSize) / 2;
+
+      // Draw the ship image
+      ctx.drawImage(img, px + offset, py + offset, imgSize, imgSize);
+
+      // Draw owner color indicator (small colored dot in corner)
+      const dotRadius = Math.max(3, tileSize * 0.12);
+      const dotX = px + tileSize * 0.8;
+      const dotY = py + tileSize * 0.2;
+
+      ctx.fillStyle = color;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      // Fallback to old robot rendering
+      this.drawMechIcon(ctx, px + tileSize * 0.5, py + tileSize * 0.5, tileSize * 0.35, color);
+    }
 
     // Show mech count if multiple - only when zoomed in enough
     if (mech.count > 1 && tileSize >= 16) {
