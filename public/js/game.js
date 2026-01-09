@@ -1340,8 +1340,8 @@ function updateSelectionPanel(selection) {
       html += `<p class="planet-name"><strong>${planetName}</strong></p>`;
     }
 
-    html += `<p class="planet-type">${planet.is_homeworld ? 'Homeworld' : 'Planet'}</p>`;
-    html += `<p>Income: ${planet.base_income}</p>`;
+    html += `<p class="planet-type"><img src="/assets/Icon-Planet.png" class="stat-icon" alt="">${planet.is_homeworld ? 'Homeworld' : 'Planet'}</p>`;
+    html += `<p><img src="/assets/IncomePlus.png" class="stat-icon" alt="">Income: ${planet.base_income}</p>`;
     html += `<p>Owner: ${isOwned ? 'You' : (planet.owner_id ? 'Enemy' : 'Neutral')}</p>`;
 
     // Show build panel if we own this planet
@@ -1356,15 +1356,22 @@ function updateSelectionPanel(selection) {
   }
 
   if (mechs.length > 0) {
-    html += '<p><strong>Mechs:</strong></p><ul>';
+    html += '<p><strong><img src="/assets/Mech.png" class="stat-icon" alt="">Mechs:</strong></p><ul>';
     const mechCounts = {};
     for (const mech of mechs) {
       const key = `${mech.type}-${mech.owner_id === playerId ? 'own' : 'enemy'}`;
       mechCounts[key] = (mechCounts[key] || 0) + 1;
     }
+    const mechIcons = {
+      light: '/assets/Light.png',
+      medium: '/assets/Medium.png',
+      heavy: '/assets/Heavy.png',
+      assault: '/assets/Assault.png'
+    };
     for (const [key, count] of Object.entries(mechCounts)) {
       const [type, owner] = key.split('-');
-      html += `<li>${count}x ${type} (${owner === 'own' ? 'yours' : 'enemy'})</li>`;
+      const icon = mechIcons[type] || '/assets/Mech.png';
+      html += `<li><img src="${icon}" class="stat-icon" alt="">${count}x ${type} (${owner === 'own' ? 'yours' : 'enemy'})</li>`;
     }
     html += '</ul>';
   }
