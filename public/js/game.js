@@ -2386,6 +2386,12 @@ function startTurnTimer(deadline) {
     if (diff <= 0) {
       timerEl.textContent = '00:00';
       turnTimerFrameId = null;
+
+      // Auto-submit pending orders if player hasn't submitted yet
+      if (!gameState.hasSubmittedTurn && gameState.status === 'active') {
+        console.log('Timer expired - auto-submitting pending orders');
+        submitTurn();
+      }
       return;
     }
 
