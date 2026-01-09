@@ -1902,24 +1902,27 @@ async function openAIModal() {
   // Generate a random name
   await generateAIName();
 
-  // Set up color picker with available colors
-  const usedColors = (gameState.players || []).map(p => p.empire_color).filter(Boolean);
-  const allColors = ['#4a9eff', '#4aff9e', '#ff4a4a', '#ffcc4a', '#ff4aff', '#4affff', '#ffaa4a', '#aa4aff'];
-  const availableColors = allColors.filter(c => !usedColors.includes(c));
+  // Fetch available colors from the API (same as human player color picker)
+  try {
+    const colorData = await api.getAvailableColors(gameState.gameId);
+    const availableColors = colorData.colors || [];
 
-  colorPicker.innerHTML = '';
-  for (const color of availableColors) {
-    const colorEl = document.createElement('div');
-    colorEl.className = 'color-option';
-    colorEl.style.backgroundColor = color;
-    colorEl.dataset.color = color;
-    colorEl.addEventListener('click', () => selectAIColor(color));
-    colorPicker.appendChild(colorEl);
-  }
+    colorPicker.innerHTML = '';
+    for (const color of availableColors) {
+      const colorEl = document.createElement('div');
+      colorEl.className = 'color-option';
+      colorEl.style.backgroundColor = color;
+      colorEl.dataset.color = color;
+      colorEl.addEventListener('click', () => selectAIColor(color));
+      colorPicker.appendChild(colorEl);
+    }
 
-  // Auto-select first available color
-  if (availableColors.length > 0) {
-    selectAIColor(availableColors[0]);
+    // Auto-select first available color
+    if (availableColors.length > 0) {
+      selectAIColor(availableColors[0]);
+    }
+  } catch (error) {
+    console.error('Failed to load available colors:', error);
   }
 
   modal.style.display = 'flex';
