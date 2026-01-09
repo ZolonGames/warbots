@@ -153,6 +153,38 @@ function getAIGameState(gameId, playerId, gridSize) {
     }
   }
 
+  // Check if original homeworld is lost
+  let lostHomeworld = null;
+  const originalHomeworld = db.prepare(`
+    SELECT p.*,
+           (SELECT GROUP_CONCAT(type) FROM buildings WHERE planet_id = p.id) as building_types
+    FROM planets p
+    WHERE p.game_id = ? AND p.original_owner_id = ? AND p.is_homeworld = 1
+  `).get(gameId, playerId);
+
+  if (originalHomeworld && originalHomeworld.owner_id !== playerId) {
+    // Homeworld is lost - get more info about it
+    originalHomeworld.buildings = db.prepare(`
+      SELECT * FROM buildings WHERE planet_id = ?
+    `).all(originalHomeworld.id);
+
+    // Check for enemy mechs on the homeworld
+    const mechsOnHomeworld = db.prepare(`
+      SELECT * FROM mechs WHERE game_id = ? AND x = ? AND y = ?
+    `).all(gameId, originalHomeworld.x, originalHomeworld.y);
+
+    const enemyMechsOnHomeworld = mechsOnHomeworld.filter(m => m.owner_id !== playerId);
+    const hasFortification = originalHomeworld.buildings &&
+      originalHomeworld.buildings.some(b => b.type === 'fortification');
+
+    lostHomeworld = {
+      ...originalHomeworld,
+      enemyMechCount: enemyMechsOnHomeworld.length,
+      hasFortification,
+      isUndefended: enemyMechsOnHomeworld.length === 0 && !hasFortification
+    };
+  }
+
   return {
     gameId,
     playerId,
@@ -162,7 +194,8 @@ function getAIGameState(gameId, playerId, gridSize) {
     visibleEnemyPlanets,
     neutralPlanets,
     ownedMechs,
-    visibleEnemyMechs
+    visibleEnemyMechs,
+    lostHomeworld
   };
 }
 
@@ -170,7 +203,7 @@ function getAIGameState(gameId, playerId, gridSize) {
  * Analyze the game state to determine AI strategy
  */
 function analyzeGameState(gameState, aiPlayer) {
-  const { ownedPlanets, visibleEnemyPlanets, neutralPlanets, ownedMechs, visibleEnemyMechs } = gameState;
+  const { ownedPlanets, visibleEnemyPlanets, neutralPlanets, ownedMechs, visibleEnemyMechs, lostHomeworld } = gameState;
 
   // Calculate income
   const income = calculateIncome(gameState.gameId, gameState.playerId);
@@ -231,6 +264,29 @@ function analyzeGameState(gameState, aiPlayer) {
   const totalMechStrength = ownedMechs.length;
   const combatMechs = ownedMechs.filter(m => m.type !== 'light');
 
+  // Homeworld reclaim priority
+  let needsToReclaimHomeworld = false;
+  let canReclaimHomeworldNow = false;
+
+  if (lostHomeworld) {
+    needsToReclaimHomeworld = true;
+
+    if (lostHomeworld.isUndefended) {
+      // Undefended - can reclaim with any forces
+      canReclaimHomeworldNow = ownedMechs.length > 0;
+    } else {
+      // Defended - need 4+ combat mechs
+      canReclaimHomeworldNow = combatMechs.length >= 4;
+    }
+
+    // If we need to build up forces, prioritize medium/heavy/assault
+    if (!canReclaimHomeworldNow && !lostHomeworld.isUndefended) {
+      preferredMechType = 'medium';
+      if (income >= 20) preferredMechType = 'heavy';
+      if (income >= 40) preferredMechType = 'assault';
+    }
+  }
+
   return {
     income,
     mechCounts,
@@ -244,7 +300,10 @@ function analyzeGameState(gameState, aiPlayer) {
     preferredMechType,
     maxEnemyMechs,
     combatMechs: combatMechs.length,
-    canAttackFortified: combatMechs.length >= 4
+    canAttackFortified: combatMechs.length >= 4,
+    lostHomeworld,
+    needsToReclaimHomeworld,
+    canReclaimHomeworldNow
   };
 }
 
@@ -392,7 +451,7 @@ function generateBuildOrders(gameState, aiPlayer, analysis) {
  * Generate move orders for AI
  */
 function generateMoveOrders(gameState, aiPlayer, analysis) {
-  const { ownedPlanets, neutralPlanets, visibleEnemyPlanets, ownedMechs, visibleEnemyMechs, gridSize } = gameState;
+  const { ownedPlanets, neutralPlanets, visibleEnemyPlanets, ownedMechs, visibleEnemyMechs, gridSize, lostHomeworld } = gameState;
   const moves = [];
   const assignedMechs = new Set();
 
@@ -404,6 +463,37 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
       mechsByLocation[key] = [];
     }
     mechsByLocation[key].push(mech);
+  }
+
+  // HIGHEST PRIORITY: Reclaim lost homeworld
+  if (analysis.needsToReclaimHomeworld && analysis.canReclaimHomeworldNow && lostHomeworld) {
+    if (lostHomeworld.isUndefended) {
+      // Send ANY available mech to reclaim undefended homeworld
+      let foundMech = false;
+      for (const mech of ownedMechs) {
+        if (assignedMechs.has(mech.id)) continue;
+
+        const move = moveToward(mech.x, mech.y, lostHomeworld.x, lostHomeworld.y, gridSize);
+        if (move) {
+          moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
+          assignedMechs.add(mech.id);
+          foundMech = true;
+          break; // Only need one mech for undefended
+        }
+      }
+    } else {
+      // Send combat mechs (medium/heavy/assault) to reclaim defended homeworld
+      const combatMechs = ownedMechs.filter(m => m.type !== 'light');
+      for (const mech of combatMechs) {
+        if (assignedMechs.has(mech.id)) continue;
+
+        const move = moveToward(mech.x, mech.y, lostHomeworld.x, lostHomeworld.y, gridSize);
+        if (move) {
+          moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
+          assignedMechs.add(mech.id);
+        }
+      }
+    }
   }
 
   // Priority 1: If under threat, concentrate forces

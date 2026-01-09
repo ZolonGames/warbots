@@ -141,6 +141,11 @@ function generateMap(gameId, gridSize, players) {
   }
 
   // Insert homeworlds into database
+  const insertHomeworld = db.prepare(`
+    INSERT INTO planets (game_id, x, y, base_income, owner_id, is_homeworld, name, original_owner_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
   const insertPlanet = db.prepare(`
     INSERT INTO planets (game_id, x, y, base_income, owner_id, is_homeworld, name)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -156,10 +161,10 @@ function generateMap(gameId, gridSize, players) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Insert homeworlds
+  // Insert homeworlds (with original_owner_id to track who it belonged to)
   for (const hw of homeworlds) {
     const homeworldName = getNextPlanetName();
-    const result = insertPlanet.run(gameId, hw.x, hw.y, 5, hw.playerId, 1, homeworldName);
+    const result = insertHomeworld.run(gameId, hw.x, hw.y, 5, hw.playerId, 1, homeworldName, hw.playerId);
     const planetId = result.lastInsertRowid;
 
     // Add starting factory

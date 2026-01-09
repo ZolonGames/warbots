@@ -164,6 +164,20 @@ async function initializeDatabase() {
     // Columns might already exist or table doesn't exist yet
   }
 
+  // Migration: Add original_owner_id to planets (to track original homeworld owner)
+  try {
+    const planetTableInfo2 = db.exec("PRAGMA table_info(planets)");
+    if (planetTableInfo2.length > 0) {
+      const columns = planetTableInfo2[0].values.map(row => row[1]);
+      if (!columns.includes('original_owner_id')) {
+        db.run('ALTER TABLE planets ADD COLUMN original_owner_id INTEGER');
+        console.log('Added original_owner_id column to planets table');
+      }
+    }
+  } catch (e) {
+    // Column might already exist
+  }
+
   // Migration: Add AI-related columns to game_players
   try {
     const gamePlayersInfo = db.exec("PRAGMA table_info(game_players)");
