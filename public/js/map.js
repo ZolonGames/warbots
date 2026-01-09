@@ -655,15 +655,18 @@ class GameMap {
       const offset = (tileSize - imgSize) / 2;
       ctx.drawImage(img, px + offset, py + offset, imgSize, imgSize);
 
-      // Draw owner color ring around owned planets
+      // Draw owner color indicator (small colored dot in corner, like ships)
       if (planet.owner_id !== null) {
-        const centerX = px + tileSize / 2;
-        const centerY = py + tileSize / 2;
-        const ringRadius = imgSize / 2 + 2;
-        ctx.strokeStyle = this.getOwnerColor(planet.owner_id);
-        ctx.lineWidth = Math.max(2, tileSize * 0.08);
+        const dotRadius = Math.max(3, tileSize * 0.12);
+        const dotX = px + tileSize * 0.8;
+        const dotY = py + tileSize * 0.2;
+
+        ctx.fillStyle = this.getOwnerColor(planet.owner_id);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+        ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
         ctx.stroke();
       }
     } else {
