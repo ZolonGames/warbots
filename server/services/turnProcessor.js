@@ -3,10 +3,12 @@ const { resolveMultiCombat } = require('./combatResolver');
 const { calculateIncome } = require('./visibilityCalc');
 const { MECH_TYPES } = require('./mapGenerator');
 
-// Import AI scheduler (will be used after turn processing)
+// Import AI scheduler and broadcast function (will be used after turn processing)
 let scheduleAITurns = null;
+let broadcastToGame = null;
 setTimeout(() => {
   scheduleAITurns = require('./aiTurnScheduler').scheduleAITurns;
+  broadcastToGame = require('../routes/api').broadcastToGame;
 }, 0);
 
 // Building costs
@@ -919,6 +921,17 @@ function checkTurnTimers() {
   for (const game of expiredGames) {
     console.log(`Turn timer expired for game ${game.id}, processing turn...`);
     processTurn(game.id);
+
+    // Broadcast turn resolved to all clients
+    if (broadcastToGame) {
+      // Get updated game to get new turn number
+      const updatedGame = db.prepare('SELECT current_turn, status FROM games WHERE id = ?').get(game.id);
+      if (updatedGame && updatedGame.status === 'active') {
+        broadcastToGame(game.id, { type: 'turn_resolved', turn: updatedGame.current_turn });
+      } else if (updatedGame && updatedGame.status === 'finished') {
+        broadcastToGame(game.id, { type: 'game_finished' });
+      }
+    }
   }
 }
 
