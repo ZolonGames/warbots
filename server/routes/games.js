@@ -478,8 +478,8 @@ router.post('/:id/start', (req, res) => {
       SELECT * FROM game_players WHERE game_id = ? ORDER BY player_number
     `).all(game.id);
 
-    if (players.length < 2) {
-      return res.status(400).json({ error: 'Need at least 2 players to start' });
+    if (players.length < game.max_players) {
+      return res.status(400).json({ error: `Need ${game.max_players} players to start (${players.length}/${game.max_players})` });
     }
 
     // Check for duplicate colors

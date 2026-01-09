@@ -1846,8 +1846,8 @@ function updateLobbyPanel() {
   // Show start and add AI buttons for host
   if (isHost) {
     startBtn.style.display = 'block';
-    startBtn.disabled = players.length < 2;
-    startBtn.title = players.length < 2 ? 'Need at least 2 players to start' : '';
+    startBtn.disabled = players.length < maxPlayers;
+    startBtn.title = players.length < maxPlayers ? `Need ${maxPlayers} players to start (${players.length}/${maxPlayers})` : '';
 
     // Show Add AI button if there's room for more players
     if (players.length < maxPlayers) {
