@@ -582,29 +582,19 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
     }
   }
 
-  // Priority 1: ATTACK enemy planets - but ONLY with grouped forces of 4+
-  // Find locations where we have 4+ mechs already grouped together at the SAME tile
-  const ATTACK_GROUP_SIZE = 4;
+  // Priority 1: ATTACK enemy planets with grouped forces of 4-8 mechs
+  // Groups of 4+ at the same tile will attack, but cap attack groups at 8
+  const MIN_ATTACK_GROUP = 4;
+  const MAX_ATTACK_GROUP = 8;
+  const IDEAL_ATTACK_GROUP = 4;
 
   if (visibleEnemyPlanets.length > 0) {
-    // Find all locations with grouped mechs (4+ at same tile)
-    const groupedLocations = [];
-    for (const [loc, mechs] of Object.entries(mechsByLocation)) {
-      // Filter to unassigned mechs only
-      const availableMechs = mechs.filter(m => !assignedMechs.has(m.id));
-      if (availableMechs.length >= ATTACK_GROUP_SIZE) {
-        const [x, y] = loc.split(',').map(Number);
-        groupedLocations.push({ x, y, mechs: availableMechs });
-      }
-    }
-
     // Sort enemy planets by priority (unfortified first, then closest)
     const sortedEnemyPlanets = [...visibleEnemyPlanets].sort((a, b) => {
       const aHasFort = a.buildings && a.buildings.some(b => b.type === 'fortification');
       const bHasFort = b.buildings && b.buildings.some(b => b.type === 'fortification');
       if (aHasFort !== bHasFort) return aHasFort ? 1 : -1;
 
-      // Then by distance to nearest owned planet
       if (ownedPlanets.length === 0) return 0;
       const distA = Math.min(...ownedPlanets.map(p =>
         Math.sqrt((a.x - p.x) ** 2 + (a.y - p.y) ** 2)
@@ -615,101 +605,138 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
       return distA - distB;
     });
 
-    // For each grouped location, send them to attack the nearest enemy planet
-    for (const group of groupedLocations) {
-      // Find nearest enemy planet to this group
-      let nearestEnemy = null;
-      let nearestDist = Infinity;
+    // Find all locations with grouped mechs (4+ at same tile)
+    for (const [loc, mechs] of Object.entries(mechsByLocation)) {
+      const availableMechs = mechs.filter(m => !assignedMechs.has(m.id));
+      if (availableMechs.length >= MIN_ATTACK_GROUP) {
+        const [x, y] = loc.split(',').map(Number);
 
-      for (const enemyPlanet of sortedEnemyPlanets) {
-        const dist = Math.sqrt(
-          (group.x - enemyPlanet.x) ** 2 +
-          (group.y - enemyPlanet.y) ** 2
-        );
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestEnemy = enemyPlanet;
+        // Find nearest enemy planet to this group
+        let nearestEnemy = null;
+        let nearestDist = Infinity;
+
+        for (const enemyPlanet of sortedEnemyPlanets) {
+          const dist = Math.sqrt((x - enemyPlanet.x) ** 2 + (y - enemyPlanet.y) ** 2);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestEnemy = enemyPlanet;
+          }
         }
-      }
 
-      if (nearestEnemy) {
-        // Send the entire group toward this enemy planet
-        for (const mech of group.mechs) {
-          if (assignedMechs.has(mech.id)) continue;
+        if (nearestEnemy) {
+          // Send up to MAX_ATTACK_GROUP mechs to attack, leave rest for next group
+          const attackGroup = availableMechs.slice(0, MAX_ATTACK_GROUP);
 
-          const move = moveToward(mech.x, mech.y, nearestEnemy.x, nearestEnemy.y, gridSize);
-          if (move) {
-            moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
-            assignedMechs.add(mech.id);
+          for (const mech of attackGroup) {
+            const move = moveToward(mech.x, mech.y, nearestEnemy.x, nearestEnemy.y, gridSize);
+            if (move) {
+              moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
+              assignedMechs.add(mech.id);
+            }
           }
         }
       }
     }
   }
 
-  // Priority 2: Rally ALL unassigned mechs to form attack groups
-  // Mechs should gather at a rally point until we have 4+
+  // Priority 2: Form attack groups of 4-8 mechs at multiple rally points
+  // Don't group ALL mechs together - form separate groups
   const unassignedMechs = ownedMechs.filter(m => !assignedMechs.has(m.id));
 
   if (unassignedMechs.length >= 1) {
-    // Find the best rally point - prefer locations with most mechs already
+    // Find all potential rally points (locations with mechs, and fortified planets)
+    const rallyPoints = [];
+
+    // Add locations that already have mechs
     const unassignedByLocation = {};
     for (const mech of unassignedMechs) {
       const key = `${mech.x},${mech.y}`;
       if (!unassignedByLocation[key]) {
-        unassignedByLocation[key] = [];
+        unassignedByLocation[key] = { x: mech.x, y: mech.y, mechs: [] };
       }
-      unassignedByLocation[key].push(mech);
+      unassignedByLocation[key].mechs.push(mech);
     }
 
-    // Find rally point (location with most unassigned mechs)
-    let rallyPoint = null;
-    let maxCount = 0;
+    for (const loc of Object.values(unassignedByLocation)) {
+      rallyPoints.push(loc);
+    }
 
-    for (const [loc, mechs] of Object.entries(unassignedByLocation)) {
-      if (mechs.length > maxCount) {
-        maxCount = mechs.length;
-        const [x, y] = loc.split(',').map(Number);
-        rallyPoint = { x, y };
+    // Add fortified planets as potential rally points
+    for (const dp of defendedPlanets) {
+      const key = `${dp.planet.x},${dp.planet.y}`;
+      if (!unassignedByLocation[key]) {
+        rallyPoints.push({ x: dp.planet.x, y: dp.planet.y, mechs: [], isFortified: true });
       }
     }
 
-    // If best rally point doesn't have many mechs, use a fortified planet as staging area
-    if (maxCount < 3 && defendedPlanets.length > 0) {
-      // Pick the defended planet closest to enemy territory
-      let bestStagingPlanet = defendedPlanets[0].planet;
+    // Sort rally points: most mechs first, then fortified planets
+    rallyPoints.sort((a, b) => {
+      if (a.mechs.length !== b.mechs.length) return b.mechs.length - a.mechs.length;
+      if (a.isFortified && !b.isFortified) return -1;
+      if (!a.isFortified && b.isFortified) return 1;
+      return 0;
+    });
 
-      if (visibleEnemyPlanets.length > 0) {
-        let bestDist = Infinity;
-        for (const dp of defendedPlanets) {
-          const distToEnemy = Math.min(...visibleEnemyPlanets.map(e =>
-            Math.sqrt((dp.planet.x - e.x) ** 2 + (dp.planet.y - e.y) ** 2)
-          ));
-          if (distToEnemy < bestDist) {
-            bestDist = distToEnemy;
-            bestStagingPlanet = dp.planet;
-          }
+    // Assign mechs to rally points, but cap each rally point at IDEAL_ATTACK_GROUP
+    const mechsNeedingRally = unassignedMechs.filter(m =>
+      !assignedMechs.has(m.id) &&
+      !rallyPoints.some(rp => rp.x === m.x && rp.y === m.y && rp.mechs.length >= IDEAL_ATTACK_GROUP)
+    );
+
+    for (const mech of mechsNeedingRally) {
+      if (assignedMechs.has(mech.id)) continue;
+
+      // Find nearest rally point that has room (< IDEAL_ATTACK_GROUP mechs heading there)
+      let bestRally = null;
+      let bestDist = Infinity;
+
+      for (const rp of rallyPoints) {
+        // Skip if this rally point already has enough mechs
+        if (rp.mechs.length >= IDEAL_ATTACK_GROUP) continue;
+
+        // Skip if mech is already at this rally point
+        if (mech.x === rp.x && mech.y === rp.y) continue;
+
+        const dist = Math.sqrt((mech.x - rp.x) ** 2 + (mech.y - rp.y) ** 2);
+
+        // Prefer rally points that already have some mechs (closer to forming a group)
+        const adjustedDist = dist / (1 + rp.mechs.length * 0.5);
+
+        if (adjustedDist < bestDist) {
+          bestDist = adjustedDist;
+          bestRally = rp;
         }
       }
 
-      rallyPoint = { x: bestStagingPlanet.x, y: bestStagingPlanet.y };
-    }
+      // If no rally point with room, create new one at nearest fortified planet
+      if (!bestRally && defendedPlanets.length > 0) {
+        let nearestFort = null;
+        let nearestDist = Infinity;
 
-    // If still no rally point, use homeworld
-    if (!rallyPoint && analysis.homeworld) {
-      rallyPoint = { x: analysis.homeworld.x, y: analysis.homeworld.y };
-    }
+        for (const dp of defendedPlanets) {
+          if (mech.x === dp.planet.x && mech.y === dp.planet.y) continue;
 
-    if (rallyPoint) {
-      // Move ALL scattered mechs toward rally point
-      for (const mech of unassignedMechs) {
-        if (assignedMechs.has(mech.id)) continue;
-        if (mech.x === rallyPoint.x && mech.y === rallyPoint.y) continue;
+          const dist = Math.sqrt(
+            (mech.x - dp.planet.x) ** 2 + (mech.y - dp.planet.y) ** 2
+          );
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestFort = dp.planet;
+          }
+        }
 
-        const move = moveToward(mech.x, mech.y, rallyPoint.x, rallyPoint.y, gridSize);
+        if (nearestFort) {
+          bestRally = { x: nearestFort.x, y: nearestFort.y, mechs: [] };
+          rallyPoints.push(bestRally);
+        }
+      }
+
+      if (bestRally) {
+        const move = moveToward(mech.x, mech.y, bestRally.x, bestRally.y, gridSize);
         if (move) {
           moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
           assignedMechs.add(mech.id);
+          bestRally.mechs.push(mech); // Track that this mech is heading there
         }
       }
     }
