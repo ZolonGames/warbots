@@ -88,14 +88,16 @@ function submitAITurn(gameId, aiPlayerId) {
     console.log(`AI ${aiPlayer.empire_name} generating orders for turn ${game.current_turn}...`);
     const orders = generateAIOrders(gameId, aiPlayer);
 
-    // Validate orders (simplified validation for AI)
-    const validationResult = validateAIOrders(orders, aiPlayer, game);
-    if (!validationResult.valid) {
-      console.error(`AI orders validation failed: ${validationResult.error}`);
-      aiLogger.logError(aiPlayer.empire_name, validationResult.error);
-      // Submit empty orders if validation fails
-      orders.moves = [];
-      orders.builds = [];
+    // Filter out any invalid orders (keeps valid ones instead of rejecting all)
+    const filteredOrders = filterValidAIOrders(orders, aiPlayer, game);
+    orders.moves = filteredOrders.moves;
+    orders.builds = filteredOrders.builds;
+
+    if (filteredOrders.errors.length > 0) {
+      for (const error of filteredOrders.errors) {
+        console.warn(`AI order filtered: ${error}`);
+        aiLogger.logError(aiPlayer.empire_name, error);
+      }
     }
 
     // Save turn orders
@@ -140,41 +142,16 @@ function submitAITurn(gameId, aiPlayerId) {
 }
 
 /**
- * Validate AI orders (simplified validation)
+ * Filter AI orders - keeps valid orders, removes invalid ones
+ * Returns filtered orders and list of errors for logging
  */
-function validateAIOrders(orders, player, game) {
+function filterValidAIOrders(orders, player, game) {
   const moves = orders.moves || [];
   const builds = orders.builds || [];
+  const validMoves = [];
+  const validBuilds = [];
+  const errors = [];
 
-  // Validate moves
-  for (const move of moves) {
-    if (!move.mechId || move.toX === undefined || move.toY === undefined) {
-      return { valid: false, error: 'Invalid move order format' };
-    }
-
-    // Check mech belongs to player
-    const mech = db.prepare(`
-      SELECT * FROM mechs WHERE id = ? AND owner_id = ?
-    `).get(move.mechId, player.id);
-
-    if (!mech) {
-      return { valid: false, error: `Mech ${move.mechId} not found or not owned` };
-    }
-
-    // Check destination is adjacent
-    const dx = Math.abs(move.toX - mech.x);
-    const dy = Math.abs(move.toY - mech.y);
-    if (dx > 1 || dy > 1) {
-      return { valid: false, error: `Invalid move destination for mech ${move.mechId}` };
-    }
-
-    // Check destination is in bounds
-    if (move.toX < 0 || move.toX >= game.grid_size || move.toY < 0 || move.toY >= game.grid_size) {
-      return { valid: false, error: 'Move destination out of bounds' };
-    }
-  }
-
-  // Calculate total build cost
   const COSTS = {
     mining: 10,
     factory: 30,
@@ -185,70 +162,115 @@ function validateAIOrders(orders, player, game) {
     assault: 20
   };
 
+  // Filter moves - keep only valid ones
+  for (const move of moves) {
+    if (!move.mechId || move.toX === undefined || move.toY === undefined) {
+      errors.push('Invalid move order format');
+      continue;
+    }
+
+    const mech = db.prepare(`
+      SELECT * FROM mechs WHERE id = ? AND owner_id = ?
+    `).get(move.mechId, player.id);
+
+    if (!mech) {
+      errors.push(`Mech ${move.mechId} not found or not owned`);
+      continue;
+    }
+
+    const dx = Math.abs(move.toX - mech.x);
+    const dy = Math.abs(move.toY - mech.y);
+    if (dx > 1 || dy > 1) {
+      errors.push(`Invalid move destination for mech ${move.mechId}`);
+      continue;
+    }
+
+    if (move.toX < 0 || move.toX >= game.grid_size || move.toY < 0 || move.toY >= game.grid_size) {
+      errors.push('Move destination out of bounds');
+      continue;
+    }
+
+    validMoves.push(move);
+  }
+
+  // Filter builds - keep only valid ones within budget
   let totalCost = 0;
   const planetsWithMechOrder = new Set();
 
   for (const build of builds) {
     if (!build.planetId || !build.type) {
-      return { valid: false, error: 'Invalid build order format' };
+      errors.push('Invalid build order format');
+      continue;
     }
 
-    // Check planet belongs to player
     const planet = db.prepare(`
       SELECT * FROM planets WHERE id = ? AND owner_id = ?
     `).get(build.planetId, player.id);
 
     if (!planet) {
-      return { valid: false, error: `Planet ${build.planetId} not found or not owned` };
+      errors.push(`Planet ${build.planetId} not found or not owned`);
+      continue;
     }
 
     if (build.type === 'mech') {
-      // Check factory exists on planet
       const factory = db.prepare(`
         SELECT * FROM buildings WHERE planet_id = ? AND type = 'factory'
       `).get(build.planetId);
 
       if (!factory) {
-        return { valid: false, error: 'Cannot build mechs without a factory' };
+        errors.push('Cannot build mechs without a factory');
+        continue;
       }
 
-      // Check one mech per factory per turn
       if (planetsWithMechOrder.has(build.planetId)) {
-        return { valid: false, error: 'Each factory can only produce 1 mech per turn' };
+        errors.push('Each factory can only produce 1 mech per turn');
+        continue;
       }
-      planetsWithMechOrder.add(build.planetId);
 
       const mechType = build.mechType;
       if (!['light', 'medium', 'heavy', 'assault'].includes(mechType)) {
-        return { valid: false, error: `Invalid mech type: ${mechType}` };
+        errors.push(`Invalid mech type: ${mechType}`);
+        continue;
       }
 
-      totalCost += COSTS[mechType];
+      const cost = COSTS[mechType];
+      if (totalCost + cost > player.credits) {
+        errors.push(`Insufficient credits for ${mechType} mech`);
+        continue;
+      }
+
+      totalCost += cost;
+      planetsWithMechOrder.add(build.planetId);
+      validBuilds.push(build);
+
     } else if (build.type === 'building') {
       const buildingType = build.buildingType;
       if (!['mining', 'factory', 'fortification'].includes(buildingType)) {
-        return { valid: false, error: `Invalid building type: ${buildingType}` };
+        errors.push(`Invalid building type: ${buildingType}`);
+        continue;
       }
 
-      // Check if building already exists
       const existingBuilding = db.prepare(`
         SELECT * FROM buildings WHERE planet_id = ? AND type = ?
       `).get(build.planetId, buildingType);
 
       if (existingBuilding) {
-        return { valid: false, error: `${buildingType} already exists on this planet` };
+        errors.push(`${buildingType} already exists on this planet`);
+        continue;
       }
 
-      totalCost += COSTS[buildingType];
+      const cost = COSTS[buildingType];
+      if (totalCost + cost > player.credits) {
+        errors.push(`Insufficient credits for ${buildingType}`);
+        continue;
+      }
+
+      totalCost += cost;
+      validBuilds.push(build);
     }
   }
 
-  // Check player has enough credits
-  if (totalCost > 0 && totalCost > player.credits) {
-    return { valid: false, error: `Insufficient credits (need ${totalCost}, have ${player.credits})` };
-  }
-
-  return { valid: true };
+  return { moves: validMoves, builds: validBuilds, errors };
 }
 
 /**

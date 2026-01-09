@@ -357,30 +357,31 @@ function generateBuildOrders(gameState, aiPlayer, analysis) {
     }
   }
 
-  // Priority 5: Build mechs with remaining budget
-  if (analysis.planetsWithFactory.length > 0) {
-    const mechCost = MECH_TYPES[analysis.preferredMechType]?.cost || 2;
-    const factoryPlanet = analysis.planetsWithFactory[0];
+  // Priority 5: Build mechs with remaining budget (ONE mech per factory per turn)
+  const usedFactories = new Set();
 
-    while (budget >= mechCost) {
+  for (const factoryPlanet of analysis.planetsWithFactory) {
+    if (usedFactories.has(factoryPlanet.id)) continue;
+
+    // Try to build preferred mech type first
+    const mechCost = MECH_TYPES[analysis.preferredMechType]?.cost || 2;
+    if (budget >= mechCost) {
       builds.push({
         planetId: factoryPlanet.id,
         type: 'mech',
         mechType: analysis.preferredMechType
       });
       budget -= mechCost;
-    }
-
-    // If we can't afford preferred type, try cheaper types
-    if (budget >= MECH_TYPES.light.cost && analysis.preferredMechType !== 'light') {
-      while (budget >= MECH_TYPES.light.cost) {
-        builds.push({
-          planetId: factoryPlanet.id,
-          type: 'mech',
-          mechType: 'light'
-        });
-        budget -= MECH_TYPES.light.cost;
-      }
+      usedFactories.add(factoryPlanet.id);
+    } else if (budget >= MECH_TYPES.light.cost) {
+      // Fall back to light mech if can't afford preferred
+      builds.push({
+        planetId: factoryPlanet.id,
+        type: 'mech',
+        mechType: 'light'
+      });
+      budget -= MECH_TYPES.light.cost;
+      usedFactories.add(factoryPlanet.id);
     }
   }
 
