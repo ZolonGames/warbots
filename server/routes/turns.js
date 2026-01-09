@@ -89,10 +89,12 @@ router.get('/games/:id/turns/status', (req, res) => {
   try {
     const gameId = parseInt(req.params.id);
 
+    // Use LEFT JOIN to handle AI players (who have no user record)
     const players = db.prepare(`
-      SELECT gp.player_number, gp.has_submitted_turn, gp.is_eliminated, u.display_name
+      SELECT gp.player_number, gp.has_submitted_turn, gp.is_eliminated, gp.is_ai,
+             COALESCE(u.display_name, gp.empire_name) as display_name
       FROM game_players gp
-      JOIN users u ON gp.user_id = u.id
+      LEFT JOIN users u ON gp.user_id = u.id
       WHERE gp.game_id = ?
       ORDER BY gp.player_number
     `).all(gameId);

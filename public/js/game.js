@@ -1516,6 +1516,20 @@ function setupUIHandlers() {
   // Start game button (for host in waiting state)
   document.getElementById('start-game-btn').addEventListener('click', startGame);
 
+  // Add AI button
+  document.getElementById('add-ai-btn').addEventListener('click', openAIModal);
+
+  // AI modal form
+  document.getElementById('ai-form').addEventListener('submit', submitAIPlayer);
+  document.getElementById('generate-ai-name').addEventListener('click', generateAIName);
+
+  // Close AI modal when clicking overlay background
+  document.getElementById('ai-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'ai-modal') {
+      closeAIModal();
+    }
+  });
+
   // Map controls
   document.getElementById('zoom-in').addEventListener('click', () => gameMap.zoomIn());
   document.getElementById('zoom-out').addEventListener('click', () => gameMap.zoomOut());
@@ -1800,6 +1814,7 @@ function showLobbyPanel(show) {
 function updateLobbyPanel() {
   const playersList = document.getElementById('players-list');
   const startBtn = document.getElementById('start-game-btn');
+  const addAIBtn = document.getElementById('add-ai-btn');
   const maxPlayers = gameState.maxPlayers;
   const players = gameState.players || [];
   const isHost = gameState.userId === gameState.hostId;
@@ -1810,10 +1825,11 @@ function updateLobbyPanel() {
     const player = players[i];
     if (player) {
       const color = player.empire_color || '#888';
+      const aiTag = player.is_ai ? ' <span class="ai-tag">[AI]</span>' : '';
       html += `
         <div class="lobby-player joined">
           <span class="player-color" style="background-color: ${color};"></span>
-          <span class="player-name" style="color: ${color};">${escapeHtml(player.empire_name || player.display_name)}</span>
+          <span class="player-name" style="color: ${color};">${escapeHtml(player.empire_name || player.display_name)}${aiTag}</span>
         </div>
       `;
     } else {
@@ -1827,13 +1843,21 @@ function updateLobbyPanel() {
   }
   playersList.innerHTML = html;
 
-  // Show start button for host
+  // Show start and add AI buttons for host
   if (isHost) {
     startBtn.style.display = 'block';
     startBtn.disabled = players.length < 2;
     startBtn.title = players.length < 2 ? 'Need at least 2 players to start' : '';
+
+    // Show Add AI button if there's room for more players
+    if (players.length < maxPlayers) {
+      addAIBtn.style.display = 'block';
+    } else {
+      addAIBtn.style.display = 'none';
+    }
   } else {
     startBtn.style.display = 'none';
+    addAIBtn.style.display = 'none';
   }
 }
 
@@ -1849,6 +1873,105 @@ async function startGame() {
     alert('Failed to start game: ' + error.message);
     startBtn.disabled = false;
     startBtn.textContent = 'Start Game';
+  }
+}
+
+// AI name generation data (loaded from server)
+let aiNameData = null;
+
+async function loadAINameData() {
+  if (aiNameData) return aiNameData;
+  try {
+    const response = await fetch('/api/ai/names');
+    aiNameData = await response.json();
+    return aiNameData;
+  } catch (error) {
+    console.error('Failed to load AI name data:', error);
+    // Fallback data
+    return {
+      prefixes: ['Cybernetic', 'Terran', 'Martian', 'Grey', 'Eternal'],
+      suffixes: ['Collective', 'Alliance', 'Federation', 'Empire', 'Hive']
+    };
+  }
+}
+
+async function openAIModal() {
+  const modal = document.getElementById('ai-modal');
+  const colorPicker = document.getElementById('ai-color-picker');
+
+  // Generate a random name
+  await generateAIName();
+
+  // Set up color picker with available colors
+  const usedColors = (gameState.players || []).map(p => p.empire_color).filter(Boolean);
+  const allColors = ['#4a9eff', '#4aff9e', '#ff4a4a', '#ffcc4a', '#ff4aff', '#4affff', '#ffaa4a', '#aa4aff'];
+  const availableColors = allColors.filter(c => !usedColors.includes(c));
+
+  colorPicker.innerHTML = '';
+  for (const color of availableColors) {
+    const colorEl = document.createElement('div');
+    colorEl.className = 'color-option';
+    colorEl.style.backgroundColor = color;
+    colorEl.dataset.color = color;
+    colorEl.addEventListener('click', () => selectAIColor(color));
+    colorPicker.appendChild(colorEl);
+  }
+
+  // Auto-select first available color
+  if (availableColors.length > 0) {
+    selectAIColor(availableColors[0]);
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeAIModal() {
+  document.getElementById('ai-modal').style.display = 'none';
+}
+
+function selectAIColor(color) {
+  document.getElementById('ai-selected-color').value = color;
+
+  // Update visual selection
+  document.querySelectorAll('#ai-color-picker .color-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.color === color);
+  });
+}
+
+async function generateAIName() {
+  const nameData = await loadAINameData();
+  const prefix = nameData.prefixes[Math.floor(Math.random() * nameData.prefixes.length)];
+  const suffix = nameData.suffixes[Math.floor(Math.random() * nameData.suffixes.length)];
+  document.getElementById('ai-name').value = `The ${prefix} ${suffix}`;
+}
+
+async function submitAIPlayer(e) {
+  e.preventDefault();
+
+  const name = document.getElementById('ai-name').value.trim();
+  const color = document.getElementById('ai-selected-color').value;
+  const difficulty = document.getElementById('ai-difficulty').value;
+
+  if (!name || !color) {
+    alert('Please enter a name and select a color');
+    return;
+  }
+
+  try {
+    await api.addAIPlayer(gameState.gameId, {
+      name,
+      color,
+      difficulty
+    });
+
+    closeAIModal();
+
+    // Refresh game state to show new AI player
+    const gameId = new URLSearchParams(window.location.search).get('id');
+    gameState = await api.getGameState(gameId);
+    updateLobbyPanel();
+  } catch (error) {
+    alert('Failed to add AI player: ' + error.message);
   }
 }
 

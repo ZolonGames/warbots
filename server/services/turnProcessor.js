@@ -3,6 +3,12 @@ const { resolveMultiCombat } = require('./combatResolver');
 const { calculateIncome } = require('./visibilityCalc');
 const { MECH_TYPES } = require('./mapGenerator');
 
+// Import AI scheduler (will be used after turn processing)
+let scheduleAITurns = null;
+setTimeout(() => {
+  scheduleAITurns = require('./aiTurnScheduler').scheduleAITurns;
+}, 0);
+
 // Building costs
 const BUILDING_COSTS = {
   mining: 10,
@@ -164,6 +170,13 @@ function processTurn(gameId) {
     db.prepare(`
       UPDATE games SET current_turn = current_turn + 1, turn_deadline = ? WHERE id = ?
     `).run(turnDeadline, gameId);
+
+    // Schedule AI turns for the new turn
+    if (scheduleAITurns) {
+      setTimeout(() => {
+        scheduleAITurns(gameId);
+      }, 1000);
+    }
   }
 
   console.log(`Turn ${game.current_turn} processed for game ${gameId}`);
@@ -855,11 +868,11 @@ function checkWinCondition(gameId) {
   const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
   const turnNumber = game.current_turn;
 
-  // Count remaining non-eliminated players
+  // Count remaining non-eliminated players (LEFT JOIN to handle AI players)
   const remainingPlayers = db.prepare(`
-    SELECT gp.*, u.display_name
+    SELECT gp.*, COALESCE(u.display_name, gp.empire_name) as display_name
     FROM game_players gp
-    JOIN users u ON gp.user_id = u.id
+    LEFT JOIN users u ON gp.user_id = u.id
     WHERE gp.game_id = ? AND gp.is_eliminated = 0
   `).all(gameId);
 

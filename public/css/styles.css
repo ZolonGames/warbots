@@ -126,6 +126,19 @@ a:hover {
   margin-top: 20px;
 }
 
+.input-with-button {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-button input {
+  flex: 1;
+}
+
+.input-with-button .btn-small {
+  white-space: nowrap;
+}
+
 /* Color picker styles */
 .color-picker {
   display: grid;
@@ -588,6 +601,13 @@ a:hover {
   color: var(--text-secondary);
   font-style: italic;
   font-weight: normal;
+}
+
+.ai-tag {
+  font-size: 10px;
+  color: var(--accent-cyan);
+  font-weight: normal;
+  margin-left: 4px;
 }
 
 /* Resources panel in right sidebar */

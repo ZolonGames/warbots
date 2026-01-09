@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../config/database');
 const { requireAuth } = require('../middleware/auth');
 const { generateMap } = require('../services/mapGenerator');
+const { scheduleAITurns } = require('../services/aiTurnScheduler');
 
 const router = express.Router();
 
@@ -201,13 +202,13 @@ router.get('/:id', (req, res) => {
       return res.status(404).json({ error: 'Game not found' });
     }
 
-    // Get players
+    // Get players (LEFT JOIN to handle AI players who have no user record)
     const players = db.prepare(`
       SELECT
         gp.*,
-        u.display_name
+        COALESCE(u.display_name, gp.empire_name) as display_name
       FROM game_players gp
-      JOIN users u ON gp.user_id = u.id
+      LEFT JOIN users u ON gp.user_id = u.id
       WHERE gp.game_id = ?
       ORDER BY gp.player_number
     `).all(req.params.id);
@@ -339,6 +340,77 @@ router.post('/:id/empire', (req, res) => {
   }
 });
 
+// Add AI player to game (host only)
+router.post('/:id/ai', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+    const { name, color, difficulty } = req.body;
+
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    // Only host can add AI players
+    if (game.host_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the host can add AI players' });
+    }
+
+    if (game.status !== 'waiting') {
+      return res.status(400).json({ error: 'Game has already started' });
+    }
+
+    // Validate AI name
+    if (!name || name.trim().length < 1 || name.trim().length > 40) {
+      return res.status(400).json({ error: 'AI name must be 1-40 characters' });
+    }
+
+    // Validate color
+    if (!color || !EMPIRE_COLORS.includes(color)) {
+      return res.status(400).json({ error: 'Invalid empire color' });
+    }
+
+    // Check if color is already taken
+    const colorTaken = db.prepare(`
+      SELECT id FROM game_players WHERE game_id = ? AND empire_color = ?
+    `).get(gameId, color);
+
+    if (colorTaken) {
+      return res.status(400).json({ error: 'This color has already been taken' });
+    }
+
+    // Check if game is full
+    const playerCount = db.prepare(`
+      SELECT COUNT(*) as count FROM game_players WHERE game_id = ?
+    `).get(gameId).count;
+
+    if (playerCount >= game.max_players) {
+      return res.status(400).json({ error: 'Game is full' });
+    }
+
+    // Generate a unique negative user_id for AI players
+    // Using -(gameId * 100 + playerNumber) to ensure uniqueness
+    const playerNumber = playerCount + 1;
+    const aiUserId = -(gameId * 100 + playerNumber);
+
+    // Add AI player
+    db.prepare(`
+      INSERT INTO game_players (game_id, user_id, player_number, credits, empire_name, empire_color, is_ai, ai_difficulty)
+      VALUES (?, ?, ?, 10, ?, ?, 1, ?)
+    `).run(gameId, aiUserId, playerNumber, name.trim(), color, difficulty || 'normal');
+
+    // Broadcast player joined event
+    if (broadcastToGame) {
+      broadcastToGame(gameId, { type: 'player_joined', playerNumber, isAI: true });
+    }
+
+    res.json({ success: true, playerNumber });
+  } catch (error) {
+    console.error('Failed to add AI player:', error);
+    res.status(500).json({ error: 'Failed to add AI player' });
+  }
+});
+
 // Check for duplicate colors in a game
 router.get('/:id/color-conflicts', (req, res) => {
   try {
@@ -359,9 +431,9 @@ router.get('/:id/color-conflicts', (req, res) => {
       const userIds = conflict.user_ids.split(',').map(id => parseInt(id));
       // Get all players with this color, ordered by id descending
       const players = db.prepare(`
-        SELECT gp.id, gp.user_id, u.display_name
+        SELECT gp.id, gp.user_id, gp.is_ai, COALESCE(u.display_name, gp.empire_name) as display_name
         FROM game_players gp
-        JOIN users u ON gp.user_id = u.id
+        LEFT JOIN users u ON gp.user_id = u.id
         WHERE gp.game_id = ? AND gp.empire_color = ?
         ORDER BY gp.id DESC
       `).all(gameId, conflict.empire_color);
@@ -440,6 +512,11 @@ router.post('/:id/start', (req, res) => {
     if (broadcastToGame) {
       broadcastToGame(game.id, { type: 'game_started' });
     }
+
+    // Schedule AI turns with a small delay to let human players connect
+    setTimeout(() => {
+      scheduleAITurns(game.id);
+    }, 2000);
 
     res.json({ success: true });
   } catch (error) {

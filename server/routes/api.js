@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const { db } = require('../config/database');
 const { requireAuth } = require('../middleware/auth');
 const {
@@ -8,10 +10,27 @@ const {
   calculateIncome,
   calculateIncomeBreakdown
 } = require('../services/visibilityCalc');
+const { setBroadcastFunction } = require('../services/aiTurnScheduler');
 
 const router = express.Router();
 
-// All routes require authentication
+// Public endpoint for AI name generation data (no auth required)
+router.get('/ai/names', (req, res) => {
+  try {
+    const namesPath = path.join(__dirname, '../data/ai-names.json');
+    const namesData = JSON.parse(fs.readFileSync(namesPath, 'utf8'));
+    res.json(namesData);
+  } catch (error) {
+    console.error('Failed to load AI names:', error);
+    // Return fallback data if file fails to load
+    res.json({
+      prefixes: ['Cybernetic', 'Terran', 'Martian', 'Grey', 'Eternal'],
+      suffixes: ['Collective', 'Alliance', 'Federation', 'Empire', 'Hive']
+    });
+  }
+});
+
+// All routes below require authentication
 router.use(requireAuth);
 
 // Get game state for a player (with fog of war applied)
@@ -73,16 +92,18 @@ router.get('/games/:id/state', (req, res) => {
     const incomeBreakdown = calculateIncomeBreakdown(gameId, player.id);
 
     // Get all players for display (with empire info and stats)
+    // Use LEFT JOIN to handle AI players (negative user_ids with no user record)
     const players = db.prepare(`
       SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, gp.credits, gp.user_id,
-             u.display_name,
+             gp.is_ai,
+             COALESCE(u.display_name, gp.empire_name) as display_name,
              (SELECT COUNT(*) FROM planets WHERE game_id = gp.game_id AND owner_id = gp.id) as planet_count,
              (SELECT COUNT(*) FROM mechs WHERE game_id = gp.game_id AND owner_id = gp.id) as mech_count,
              (SELECT COALESCE(SUM(p.base_income + COALESCE(
                (SELECT COUNT(*) FROM buildings WHERE planet_id = p.id AND type = 'mining'), 0
              )), 0) FROM planets p WHERE p.game_id = gp.game_id AND p.owner_id = gp.id) as income
       FROM game_players gp
-      JOIN users u ON gp.user_id = u.id
+      LEFT JOIN users u ON gp.user_id = u.id
       WHERE gp.game_id = ?
       ORDER BY gp.player_number
     `).all(gameId);
@@ -297,6 +318,9 @@ function broadcastToGame(gameId, event) {
     }
   }
 }
+
+// Set broadcast function for AI scheduler
+setBroadcastFunction(broadcastToGame);
 
 // Export for use in turn processor
 module.exports = router;

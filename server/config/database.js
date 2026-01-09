@@ -164,6 +164,24 @@ async function initializeDatabase() {
     // Columns might already exist or table doesn't exist yet
   }
 
+  // Migration: Add AI-related columns to game_players
+  try {
+    const gamePlayersInfo = db.exec("PRAGMA table_info(game_players)");
+    if (gamePlayersInfo.length > 0) {
+      const columns = gamePlayersInfo[0].values.map(row => row[1]);
+      if (!columns.includes('is_ai')) {
+        db.run('ALTER TABLE game_players ADD COLUMN is_ai INTEGER DEFAULT 0');
+        console.log('Added is_ai column to game_players table');
+      }
+      if (!columns.includes('ai_difficulty')) {
+        db.run('ALTER TABLE game_players ADD COLUMN ai_difficulty TEXT');
+        console.log('Added ai_difficulty column to game_players table');
+      }
+    }
+  } catch (e) {
+    // Columns might already exist or table doesn't exist yet
+  }
+
   // Turns table
   db.run(`
     CREATE TABLE IF NOT EXISTS turns (

@@ -88,5 +88,9 @@ const api = {
 
   async getColorConflicts(gameId) {
     return this.get(`/api/games/${gameId}/color-conflicts`);
+  },
+
+  async addAIPlayer(gameId, data) {
+    return this.post(`/api/games/${gameId}/ai`, data);
   }
 };
