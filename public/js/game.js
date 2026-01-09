@@ -1340,7 +1340,21 @@ function updateSelectionPanel(selection) {
       html += `<p class="planet-name"><strong>${planetName}</strong></p>`;
     }
 
-    html += `<p class="planet-type"><img src="/assets/Icon-Planet.png" class="stat-icon" alt="">${planet.is_homeworld ? 'Homeworld' : 'Planet'}</p>`;
+    // Select planet icon based on type/value
+    let planetIcon;
+    if (planet.is_homeworld) {
+      planetIcon = '/assets/Planet-5.png';
+    } else {
+      const income = planet.base_income || 1;
+      if (income >= 3) {
+        planetIcon = '/assets/Planet-3.png';
+      } else if (income === 2) {
+        planetIcon = '/assets/Planet-2.png';
+      } else {
+        planetIcon = '/assets/Planet-1.png';
+      }
+    }
+    html += `<p class="planet-type"><img src="${planetIcon}" class="stat-icon" alt="">${planet.is_homeworld ? 'Homeworld' : 'Planet'}</p>`;
     html += `<p><img src="/assets/IncomePlus.png" class="stat-icon" alt="">Income: ${planet.base_income}</p>`;
     html += `<p>Owner: ${isOwned ? 'You' : (planet.owner_id ? 'Enemy' : 'Neutral')}</p>`;
 

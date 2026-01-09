@@ -1795,6 +1795,13 @@ a:hover {
   margin-right: 6px;
 }
 
+.selection-panel .stat-icon,
+#selection-info .stat-icon {
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+}
+
 /* Lobby game card status badges */
 .game-status-badge {
   font-size: 10px;
