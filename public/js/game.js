@@ -1277,7 +1277,15 @@ function handleTileHover(tile, event) {
     }
     html += `${planet.is_homeworld ? 'Homeworld' : 'Planet'} - Income: ${planet.base_income}<br>`;
     if (planet.buildings && planet.buildings.length > 0) {
-      html += `Buildings: ${planet.buildings.map(b => b.type).join(', ')}`;
+      const buildingIcons = {
+        mining: '/assets/Mining Colony.png',
+        factory: '/assets/Factory.png',
+        fortification: '/assets/Defenses.png'
+      };
+      const iconHtml = planet.buildings.map(b =>
+        `<img src="${buildingIcons[b.type] || '/assets/Icon-Planet.png'}" class="stat-icon" alt="${b.type}" title="${b.type}">`
+      ).join(' ');
+      html += iconHtml;
     }
   }
 
