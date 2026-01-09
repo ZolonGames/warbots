@@ -470,10 +470,15 @@ function formatEventLog(log) {
   }
 }
 
+// Helper to create log icon img tag
+function logIcon(iconPath) {
+  return `<img src="/assets/${iconPath}" class="stat-icon log-icon-img" alt="">`;
+}
+
 function formatIncomeEvent(log) {
   const amount = log.detailedLog?.amount || 0;
   return `<div class="log-entry log-income">
-    <span class="log-icon">💰</span>
+    <span class="log-icon">${logIcon('Credit.png')}</span>
     Earned <span class="credits-amount">+${amount} credits</span> from your empire
   </div>`;
 }
@@ -485,8 +490,11 @@ function formatBuildMechEvent(log) {
   const planetName = data.planetName || 'Unknown Planet';
   const coords = `(${data.x}, ${data.y})`;
 
+  const mechIcons = { light: 'Light.png', medium: 'Medium.png', heavy: 'Heavy.png', assault: 'Assault.png' };
+  const icon = mechIcons[data.mechType] || 'Mech.png';
+
   return `<div class="log-entry log-build">
-    <span class="log-icon">🤖</span>
+    <span class="log-icon">${logIcon(icon)}</span>
     Built <span class="mech-name">${designation}</span> at <span class="planet-name">${planetName}</span> ${coords}
   </div>`;
 }
@@ -504,13 +512,11 @@ function formatBuildBuildingEvent(log) {
   };
   const buildingName = buildingNames[data.buildingType] || 'Unknown Building';
 
-  let icon = '🏗️';
-  if (data.buildingType === 'mining') icon = '⛏️';
-  else if (data.buildingType === 'factory') icon = '🏭';
-  else if (data.buildingType === 'fortification') icon = '🏰';
+  const buildingIcons = { mining: 'Mining Colony.png', factory: 'Factory.png', fortification: 'Defenses.png' };
+  const icon = buildingIcons[data.buildingType] || 'Icon-Planet.png';
 
   return `<div class="log-entry log-build">
-    <span class="log-icon">${icon}</span>
+    <span class="log-icon">${logIcon(icon)}</span>
     Built <span class="building-name">${buildingName}</span> at <span class="planet-name">${planetName}</span> ${coords}
   </div>`;
 }
@@ -526,7 +532,7 @@ function formatCaptureEvent(log, planet) {
   }
 
   return `<div class="log-entry log-capture">
-    <span class="log-icon">🚩</span>
+    <span class="log-icon">${logIcon('Icon-Planet.png')}</span>
     ${captureText}
   </div>`;
 }
@@ -538,7 +544,7 @@ function formatPlanetLostEvent(log) {
   const capturedBy = data.capturedBy;
 
   return `<div class="log-entry log-lost">
-    <span class="log-icon">⚠️</span>
+    <span class="log-icon">${logIcon('Icon-Planet.png')}</span>
     Lost <span class="planet-name">${planetName}</span> ${coords} to ${coloredPlayerName(capturedBy)}
   </div>`;
 }
@@ -549,19 +555,22 @@ function formatRepairEvent(log) {
 
   if (repairs.length === 0) return '';
 
+  const mechIcons = { light: 'Light.png', medium: 'Medium.png', heavy: 'Heavy.png', assault: 'Assault.png' };
+
   let html = '';
   for (const repair of repairs) {
     const designation = repair.designation || repair.mechType;
     const planetName = repair.planetName || 'Unknown';
+    const icon = mechIcons[repair.mechType] || 'Mech.png';
 
     if (repair.fullyRepaired) {
       html += `<div class="log-entry log-repair">
-        <span class="log-icon">🔧</span>
+        <span class="log-icon">${logIcon(icon)}</span>
         <span class="mech-name">${designation}</span> fully repaired at <span class="planet-name">${planetName}</span>
       </div>`;
     } else {
       html += `<div class="log-entry log-repair">
-        <span class="log-icon">🔧</span>
+        <span class="log-icon">${logIcon(icon)}</span>
         <span class="mech-name">${designation}</span> repaired +${repair.hpGained} HP (${repair.hpAfter}/${repair.maxHp}) at <span class="planet-name">${planetName}</span>
       </div>`;
     }
@@ -617,7 +626,7 @@ function formatMaintenanceEvent(log) {
   const breakdownText = breakdown.length > 0 ? ` (${breakdown.join(', ')})` : '';
 
   return `<div class="log-entry log-maintenance">
-    <span class="log-icon">🔧</span>
+    <span class="log-icon">${logIcon('MaintenanceMinus.png')}</span>
     Maintenance costs: <span class="credits-amount">-${cost} credits</span>${breakdownText}
   </div>`;
 }
@@ -627,20 +636,22 @@ function formatMaintenanceFailureEvent(log) {
   const mechStatusReport = data.mechStatusReport || [];
   const creditsAfter = data.creditsAfter || 0;
 
+  const mechIcons = { light: 'Light.png', medium: 'Medium.png', heavy: 'Heavy.png', assault: 'Assault.png' };
+
   let html = `<div class="log-entry log-maintenance-failure">
-    <span class="log-icon">⚠️</span>
+    <span class="log-icon">${logIcon('MaintenanceMinus.png')}</span>
     <span class="warning-text">CRITICAL: Maintenance failure! All mechs took 1 damage.</span>
   </div>`;
 
   // Show individual mech status
   for (const mech of mechStatusReport) {
-    const statusIcon = mech.destroyed ? '💀' : '⚡';
+    const icon = mechIcons[mech.mechType] || 'Mech.png';
     const statusText = mech.destroyed
       ? `<span class="destroyed-text">${mech.designation} destroyed!</span>`
       : `${mech.designation}: ${mech.hpAfter}/${mech.maxHp} HP`;
 
     html += `<div class="log-entry log-maintenance-damage">
-      <span class="log-icon">${statusIcon}</span>
+      <span class="log-icon">${logIcon(icon)}</span>
       ${statusText}
     </div>`;
   }
