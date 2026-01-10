@@ -459,28 +459,37 @@ function generateBuildOrders(gameState, aiPlayer, analysis) {
   }
 
   // Priority 6: Build mechs with remaining budget (ONE mech per factory per turn)
-  // Prefer combat mechs (medium/heavy) over light
+  // Build a mix of combat mechs and scouts (light mechs for exploration)
   const usedFactories = new Set();
+
+  // Count current light mechs - need at least 2-3 for scouting
+  const lightMechCount = analysis.mechCounts.light || 0;
+  const needScouts = lightMechCount < 3;
 
   for (const factoryPlanet of analysis.planetsWithFactory) {
     if (usedFactories.has(factoryPlanet.id)) continue;
 
-    // Determine best mech to build based on budget
+    // Determine best mech to build based on budget and needs
     let mechType = analysis.preferredMechType;
 
-    // If we can't afford preferred, try to get the best we can
-    const costs = [
-      { type: 'assault', cost: MECH_TYPES.assault.cost },
-      { type: 'heavy', cost: MECH_TYPES.heavy.cost },
-      { type: 'medium', cost: MECH_TYPES.medium.cost },
-      { type: 'light', cost: MECH_TYPES.light.cost }
-    ];
+    // If we need scouts, build a light mech from the first available factory
+    if (needScouts && usedFactories.size === 0 && budget >= MECH_TYPES.light.cost) {
+      mechType = 'light';
+    } else {
+      // If we can't afford preferred, try to get the best we can
+      const costs = [
+        { type: 'assault', cost: MECH_TYPES.assault.cost },
+        { type: 'heavy', cost: MECH_TYPES.heavy.cost },
+        { type: 'medium', cost: MECH_TYPES.medium.cost },
+        { type: 'light', cost: MECH_TYPES.light.cost }
+      ];
 
-    // Find the best affordable mech (prefer combat mechs)
-    for (const { type, cost } of costs) {
-      if (budget >= cost) {
-        mechType = type;
-        break;
+      // Find the best affordable mech (prefer combat mechs)
+      for (const { type, cost } of costs) {
+        if (budget >= cost) {
+          mechType = type;
+          break;
+        }
       }
     }
 
@@ -785,94 +794,95 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
     }
   }
 
-  // EARLY GAME PRIORITY: Exploration and expansion
-  // In early game, send light mechs to explore undiscovered areas and claim neutral planets
+  // HIGH PRIORITY: Always claim neutral planets with light mechs
   // This should happen BEFORE attack grouping to ensure expansion happens
-  if (analysis.isEarlyGame || ownedPlanets.length < 8) {
-    // First, expand to visible neutral planets (higher priority in early game)
-    if (neutralPlanets.length > 0) {
-      // Sort neutral planets by distance
-      const sortedNeutrals = [...neutralPlanets].sort((a, b) => {
-        if (ownedPlanets.length === 0) return 0;
-        const distA = Math.min(...ownedPlanets.map(p =>
-          Math.sqrt((a.x - p.x) ** 2 + (a.y - p.y) ** 2)
-        ));
-        const distB = Math.min(...ownedPlanets.map(p =>
-          Math.sqrt((b.x - p.x) ** 2 + (b.y - p.y) ** 2)
-        ));
-        return distA - distB;
-      });
+  if (neutralPlanets.length > 0) {
+    // Sort neutral planets by distance from nearest mech
+    const sortedNeutrals = [...neutralPlanets].sort((a, b) => {
+      const distA = Math.min(...ownedMechs.filter(m => !assignedMechs.has(m.id)).map(m =>
+        Math.sqrt((a.x - m.x) ** 2 + (a.y - m.y) ** 2)
+      ) || [Infinity]);
+      const distB = Math.min(...ownedMechs.filter(m => !assignedMechs.has(m.id)).map(m =>
+        Math.sqrt((b.x - m.x) ** 2 + (b.y - m.y) ** 2)
+      ) || [Infinity]);
+      return distA - distB;
+    });
 
-      // In early game, claim up to 4 neutral planets per turn
-      const maxNeutralsToClaimEarly = analysis.isEarlyGame ? 4 : 2;
-      for (const neutralPlanet of sortedNeutrals.slice(0, maxNeutralsToClaimEarly)) {
-        // Find nearest unassigned mech (strongly prefer light mechs)
-        let nearestMech = null;
-        let nearestDist = Infinity;
-
-        for (const mech of ownedMechs) {
-          if (assignedMechs.has(mech.id)) continue;
-
-          const dist = Math.sqrt(
-            (mech.x - neutralPlanet.x) ** 2 +
-            (mech.y - neutralPlanet.y) ** 2
-          );
-
-          // Strongly prefer light mechs (multiply distance by 0.3 to heavily favor them)
-          const adjustedDist = mech.type === 'light' ? dist * 0.3 : dist;
-
-          if (adjustedDist < nearestDist) {
-            nearestDist = adjustedDist;
-            nearestMech = mech;
-          }
-        }
-
-        if (nearestMech) {
-          const move = moveToward(nearestMech.x, nearestMech.y, neutralPlanet.x, neutralPlanet.y, gridSize);
-          if (move) {
-            moves.push({ mechId: nearestMech.id, toX: move.x, toY: move.y });
-            assignedMechs.add(nearestMech.id);
-          }
-        }
-      }
-    }
-
-    // EXPLORATION: Send light mechs to unexplored areas to discover new planets
-    const explorationTargets = generateExplorationTargets(gameState, ownedMechs, assignedMechs);
-
-    // Send up to 3 light mechs to explore in early game
-    const maxExplorers = analysis.isEarlyGame ? 3 : 1;
-    let explorersSent = 0;
-
-    for (const target of explorationTargets) {
-      if (explorersSent >= maxExplorers) break;
-
-      // Find nearest unassigned light mech
-      let bestMech = null;
-      let bestDist = Infinity;
+    // Claim ALL visible neutral planets - send one light mech to each
+    for (const neutralPlanet of sortedNeutrals) {
+      // Find nearest unassigned LIGHT mech first, then any mech if no lights available
+      let nearestLightMech = null;
+      let nearestLightDist = Infinity;
+      let nearestAnyMech = null;
+      let nearestAnyDist = Infinity;
 
       for (const mech of ownedMechs) {
         if (assignedMechs.has(mech.id)) continue;
-        if (mech.type !== 'light') continue; // Only use light mechs for exploration
 
         const dist = Math.sqrt(
-          (mech.x - target.x) ** 2 +
-          (mech.y - target.y) ** 2
+          (mech.x - neutralPlanet.x) ** 2 +
+          (mech.y - neutralPlanet.y) ** 2
         );
 
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestMech = mech;
+        if (mech.type === 'light' && dist < nearestLightDist) {
+          nearestLightDist = dist;
+          nearestLightMech = mech;
+        }
+        if (dist < nearestAnyDist) {
+          nearestAnyDist = dist;
+          nearestAnyMech = mech;
         }
       }
 
-      if (bestMech) {
-        const move = moveToward(bestMech.x, bestMech.y, target.x, target.y, gridSize);
+      // Prefer light mech, but use any mech if no lights available
+      const selectedMech = nearestLightMech || nearestAnyMech;
+
+      if (selectedMech) {
+        const move = moveToward(selectedMech.x, selectedMech.y, neutralPlanet.x, neutralPlanet.y, gridSize);
         if (move) {
-          moves.push({ mechId: bestMech.id, toX: move.x, toY: move.y });
-          assignedMechs.add(bestMech.id);
-          explorersSent++;
+          moves.push({ mechId: selectedMech.id, toX: move.x, toY: move.y });
+          assignedMechs.add(selectedMech.id);
         }
+      }
+    }
+  }
+
+  // EXPLORATION: Send light mechs to unexplored areas to discover new planets
+  // Always explore, not just in early game
+  const explorationTargets = generateExplorationTargets(gameState, ownedMechs, assignedMechs);
+
+  // Send light mechs to explore (more in early game)
+  const maxExplorers = analysis.isEarlyGame ? 4 : 2;
+  let explorersSent = 0;
+
+  for (const target of explorationTargets) {
+    if (explorersSent >= maxExplorers) break;
+
+    // Find nearest unassigned light mech
+    let bestMech = null;
+    let bestDist = Infinity;
+
+    for (const mech of ownedMechs) {
+      if (assignedMechs.has(mech.id)) continue;
+      if (mech.type !== 'light') continue; // Only use light mechs for exploration
+
+      const dist = Math.sqrt(
+        (mech.x - target.x) ** 2 +
+        (mech.y - target.y) ** 2
+      );
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestMech = mech;
+      }
+    }
+
+    if (bestMech) {
+      const move = moveToward(bestMech.x, bestMech.y, target.x, target.y, gridSize);
+      if (move) {
+        moves.push({ mechId: bestMech.id, toX: move.x, toY: move.y });
+        assignedMechs.add(bestMech.id);
+        explorersSent++;
       }
     }
   }

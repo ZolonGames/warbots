@@ -2678,7 +2678,10 @@ function showWaitingIndicator(show) {
     submitBtn.style.display = 'none';
   } else {
     indicator.style.display = 'none';
-    submitBtn.style.display = 'inline-flex';
+    // Don't show submit button if in observer mode
+    if (!gameState?.isObserver) {
+      submitBtn.style.display = 'inline-flex';
+    }
   }
 }
 
@@ -2691,7 +2694,10 @@ function showWaitingForPlayers(show) {
     submitBtn.style.display = 'none';
   } else {
     indicator.style.display = 'none';
-    submitBtn.style.display = 'inline-flex';
+    // Don't show submit button if in observer mode
+    if (!gameState?.isObserver) {
+      submitBtn.style.display = 'inline-flex';
+    }
   }
 }
 
@@ -3217,6 +3223,10 @@ function enterObserverMode() {
   // Hide retire button (can't retire if already eliminated/winner)
   document.getElementById('btn-retire').style.display = 'none';
 
+  // Hide Planet Management and Mech Management buttons in observer mode
+  document.getElementById('btn-planet-management').style.display = 'none';
+  document.getElementById('btn-mech-management').style.display = 'none';
+
   // Update observer player list
   updateObserverPanel();
 
@@ -3357,6 +3367,11 @@ async function refreshGameState(gameId) {
     // Update Star Empires if modal is open
     if (document.getElementById('star-empires-overlay').style.display !== 'none') {
       renderStarEmpiresList();
+    }
+
+    // Update observer panel if in observer mode
+    if (gameState.isObserver) {
+      updateObserverPanel();
     }
 
     // Update lobby panel if still waiting
