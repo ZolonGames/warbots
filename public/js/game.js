@@ -3702,14 +3702,15 @@ async function refreshGameState(gameId) {
       const preservedWaypoints = pendingOrders.waypoints || [];
       pendingOrders = { moves: [], builds: [], waypoints: preservedWaypoints };
 
-      // Regenerate move orders from waypoints for the new turn
-      regenerateWaypointMoves();
+      // Regenerate move orders from waypoints for the new turn (only for active players)
+      if (!gameState.isObserver) {
+        regenerateWaypointMoves();
+        updateOrdersList();
+        updateMovementArrows();
 
-      updateOrdersList();
-      updateMovementArrows();
-
-      // Save updated waypoints to storage
-      saveOrdersToStorage(gameId, gameState.currentTurn);
+        // Save updated waypoints to storage
+        saveOrdersToStorage(gameId, gameState.currentTurn);
+      }
     }
 
     if (turnChanged || gameJustEnded) {
