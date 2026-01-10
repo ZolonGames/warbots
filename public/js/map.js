@@ -574,8 +574,14 @@ class GameMap {
     }
 
     // Draw regular movement order arrows (solid, on top)
+    // Skip mechs that have waypoints - they already show the destination arrow
+    const mechsWithWaypoints = new Set((this.waypoints || []).map(w => w.mechId));
+
     if (this.movementOrders && this.movementOrders.length > 0) {
       for (const order of this.movementOrders) {
+        // Skip if this mech has a waypoint - only show the waypoint arrow
+        if (mechsWithWaypoints.has(order.mechId)) continue;
+
         // Find the mech to get its owner color
         const mech = this.mechs.find(m => m.id === order.mechId);
         if (!mech) continue;
