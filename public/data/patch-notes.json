@@ -1,6 +1,15 @@
 {
   "notes": [
     {
+      "version": "1.4.4",
+      "date": "2026-01-10",
+      "changes": [
+        "AI now builds 5 light scouts for exploration and capturing undefended planets",
+        "AI only produces combat mechs (medium+) after first enemy contact",
+        "Scouts spread out across the map to maximize territory discovery"
+      ]
+    },
+    {
       "version": "1.4.3",
       "date": "2026-01-10",
       "changes": [

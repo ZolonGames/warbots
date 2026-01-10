@@ -239,10 +239,16 @@ function analyzeGameState(gameState, aiPlayer) {
   // Check threat level (3+ enemy mechs in visibility)
   const underThreat = visibleEnemyMechs.length >= 3;
 
+  // Track if we've encountered any enemies (seen enemy planet or mech)
+  // This triggers the transition from scout phase to combat phase
+  const hasEncounteredEnemy = visibleEnemyPlanets.length > 0 || visibleEnemyMechs.length > 0;
+
   // Determine which mech type to build
+  // Start with light scouts, switch to medium after first enemy contact
   let preferredMechType = 'light';
 
-  if (isMidGame || planetCount >= 5) {
+  if (hasEncounteredEnemy) {
+    // After enemy contact, build medium mechs as the baseline
     preferredMechType = 'medium';
   }
 
@@ -311,6 +317,7 @@ function analyzeGameState(gameState, aiPlayer) {
     isEarlyGame,
     isMidGame,
     underThreat,
+    hasEncounteredEnemy,
     preferredMechType,
     maxEnemyMechs,
     combatMechs: combatMechs.length,
@@ -462,9 +469,9 @@ function generateBuildOrders(gameState, aiPlayer, analysis) {
   // Build a mix of combat mechs and scouts (light mechs for exploration)
   const usedFactories = new Set();
 
-  // Count current light mechs - need at least 2-3 for scouting
+  // Count current light mechs - need 5 scouts for map exploration/capture
   const lightMechCount = analysis.mechCounts.light || 0;
-  const needScouts = lightMechCount < 3;
+  const needScouts = lightMechCount < 5;
 
   for (const factoryPlanet of analysis.planetsWithFactory) {
     if (usedFactories.has(factoryPlanet.id)) continue;
@@ -472,10 +479,15 @@ function generateBuildOrders(gameState, aiPlayer, analysis) {
     // Determine best mech to build based on budget and needs
     let mechType = analysis.preferredMechType;
 
-    // If we need scouts, build a light mech from the first available factory
-    if (needScouts && usedFactories.size === 0 && budget >= MECH_TYPES.light.cost) {
+    // Priority 1: Build scouts until we have 5 (for exploration/capture)
+    // Continue building scouts even after enemy contact until we hit 5
+    if (needScouts && budget >= MECH_TYPES.light.cost) {
+      mechType = 'light';
+    } else if (!analysis.hasEncounteredEnemy) {
+      // Before enemy contact, only build light scouts
       mechType = 'light';
     } else {
+      // After enemy contact and we have enough scouts, build combat mechs
       // If we can't afford preferred, try to get the best we can
       const costs = [
         { type: 'assault', cost: MECH_TYPES.assault.cost },
@@ -848,11 +860,11 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
   }
 
   // EXPLORATION: Send light mechs to unexplored areas to discover new planets
-  // Always explore, not just in early game
+  // Always explore, not just in early game - scouts should spread out across the map
   const explorationTargets = generateExplorationTargets(gameState, ownedMechs, assignedMechs);
 
-  // Send light mechs to explore (more in early game)
-  const maxExplorers = analysis.isEarlyGame ? 4 : 2;
+  // Send all available light mechs to explore (up to 5 scouts)
+  const maxExplorers = 5;
   let explorersSent = 0;
 
   for (const target of explorationTargets) {
