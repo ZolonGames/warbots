@@ -156,7 +156,7 @@ function renderGameCard(game) {
         <p>
           Turn ${game.current_turn} |
           ${statusText} |
-          <span class="players">${game.player_count}/${game.max_players} players</span> |
+          <span class="players">${game.status === 'active' ? `${game.remaining_players}/${game.player_count} Players Remaining` : `${game.player_count}/${game.max_players} players`}</span> |
           ${formatTimer(game.turn_timer)}
         </p>
         ${game.status !== 'waiting' ? `

@@ -41,7 +41,7 @@ router.get('/', (req, res) => {
       SELECT
         g.*,
         u.display_name as host_name,
-        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id) as player_count
+        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id AND empire_name != 'Pirates') as player_count
       FROM games g
       JOIN users u ON g.host_id = u.id
       WHERE g.status = 'waiting'
@@ -63,7 +63,8 @@ router.get('/mine', (req, res) => {
       SELECT
         g.*,
         u.display_name as host_name,
-        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id) as player_count,
+        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id AND empire_name != 'Pirates') as player_count,
+        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id AND empire_name != 'Pirates' AND is_eliminated = 0) as remaining_players,
         (g.host_id = ?) as is_host,
         gp.empire_name,
         gp.empire_color,
