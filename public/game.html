@@ -14,7 +14,7 @@
     </div>
     <header class="game-header">
       <div class="game-title">
-        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v1.3.6</span></h1>
+        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag" onclick="openPatchNotes()" title="Click for patch notes">v1.4.0</span></h1>
       </div>
       <div class="game-info">
         <span class="game-name" id="game-name">Loading...</span>
@@ -403,6 +403,17 @@
           <button type="submit" class="btn btn-primary">Add AI</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Patch Notes Modal -->
+  <div id="patch-notes-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content patch-notes-modal">
+      <h2>Patch Notes</h2>
+      <div id="patch-notes-content" class="patch-notes-content"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" onclick="closePatchNotes()">Close</button>
+      </div>
     </div>
   </div>
 

@@ -1229,6 +1229,94 @@ async function confirmRetire() {
 
 // ==================== END RETIRE EMPIRE ====================
 
+// ==================== PATCH NOTES ====================
+
+let PATCH_NOTES = [];
+
+async function loadPatchNotes() {
+  try {
+    const response = await fetch('/data/patch-notes.json');
+    const data = await response.json();
+    PATCH_NOTES = data.notes || [];
+  } catch (error) {
+    console.error('Failed to load patch notes:', error);
+    PATCH_NOTES = [];
+  }
+}
+
+// Load patch notes on page load
+loadPatchNotes();
+
+function openPatchNotes() {
+  const container = document.getElementById('patch-notes-content');
+  if (PATCH_NOTES.length === 0) {
+    container.innerHTML = '<p class="empty">Loading patch notes...</p>';
+    // Try loading again if not loaded yet
+    loadPatchNotes().then(() => {
+      container.innerHTML = renderPatchNotes();
+    });
+  } else {
+    container.innerHTML = renderPatchNotes();
+  }
+  document.getElementById('patch-notes-modal').style.display = 'flex';
+}
+
+function closePatchNotes() {
+  document.getElementById('patch-notes-modal').style.display = 'none';
+}
+
+function renderPatchNotes() {
+  // Show latest 10 versions
+  const notesToShow = PATCH_NOTES.slice(0, 10);
+
+  return notesToShow.map(note => {
+    const [major, minor, patch] = note.version.split('.').map(Number);
+
+    let headingClass, headingTag;
+    if (patch === 0 && minor === 0) {
+      // Major version (X.0.0)
+      headingClass = 'patch-major';
+      headingTag = 'h2';
+    } else if (patch === 0) {
+      // Minor version (x.Y.0)
+      headingClass = 'patch-minor';
+      headingTag = 'h3';
+    } else {
+      // Hotfix (x.y.Z)
+      headingClass = 'patch-hotfix';
+      headingTag = 'h4';
+    }
+
+    const versionText = note.title
+      ? `v${note.version} - ${note.title}`
+      : `v${note.version}`;
+
+    // Format date if available
+    const dateText = note.date ? formatPatchDate(note.date) : '';
+
+    return `
+      <div class="patch-entry ${headingClass}">
+        <${headingTag} class="patch-version">${escapeHtml(versionText)}</${headingTag}>
+        ${dateText ? `<span class="patch-date">${dateText}</span>` : ''}
+        <ul class="patch-changes">
+          ${note.changes.map(change => `<li>${escapeHtml(change)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }).join('');
+}
+
+function formatPatchDate(dateStr) {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+// ==================== END PATCH NOTES ====================
+
 function getPlayerName(playerId) {
   const player = gameState.players.find(p => p.id === playerId);
   if (player) {
