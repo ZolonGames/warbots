@@ -93,6 +93,7 @@ router.get('/games/:id/state', (req, res) => {
 
     // Get all players for display (with empire info and stats)
     // Use LEFT JOIN to handle AI players (negative user_ids with no user record)
+    // Include Pirates but mark them with is_pirates flag (for color lookups, excluded from Star Empires)
     const players = db.prepare(`
       SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, gp.credits, gp.user_id,
              gp.is_ai, gp.has_submitted_turn,
@@ -101,7 +102,8 @@ router.get('/games/:id/state', (req, res) => {
              (SELECT COUNT(*) FROM mechs WHERE game_id = gp.game_id AND owner_id = gp.id) as mech_count,
              (SELECT COALESCE(SUM(p.base_income + COALESCE(
                (SELECT COUNT(*) FROM buildings WHERE planet_id = p.id AND type = 'mining'), 0
-             )), 0) FROM planets p WHERE p.game_id = gp.game_id AND p.owner_id = gp.id) as income
+             )), 0) FROM planets p WHERE p.game_id = gp.game_id AND p.owner_id = gp.id) as income,
+             CASE WHEN gp.empire_name = 'Pirates' THEN 1 ELSE 0 END as is_pirates
       FROM game_players gp
       LEFT JOIN users u ON gp.user_id = u.id
       WHERE gp.game_id = ?

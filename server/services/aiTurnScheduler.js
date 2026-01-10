@@ -26,9 +26,11 @@ function scheduleAITurns(gameId) {
   }
 
   // Get all non-eliminated AI players who haven't submitted their turn
+  // Exclude Pirates (they don't move, just hold retired player assets)
   const aiPlayers = db.prepare(`
     SELECT * FROM game_players
     WHERE game_id = ? AND is_ai = 1 AND is_eliminated = 0 AND has_submitted_turn = 0
+      AND empire_name != 'Pirates'
   `).all(gameId);
 
   if (aiPlayers.length === 0) {

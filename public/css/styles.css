@@ -147,6 +147,23 @@ a:hover {
   margin-top: 20px;
 }
 
+/* Retire Modal */
+.retire-modal-content h2 {
+  color: var(--accent-red);
+}
+
+.retire-warning {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.retire-description {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 .input-with-button {
   display: flex;
   gap: 8px;
@@ -835,6 +852,17 @@ a:hover {
 .toolbar-btn.active {
   border-color: var(--accent-blue);
   background: var(--accent-blue);
+  color: white;
+}
+
+.toolbar-btn-danger {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.toolbar-btn-danger:hover {
+  border-color: var(--accent-red);
+  background: var(--accent-red);
   color: white;
 }
 

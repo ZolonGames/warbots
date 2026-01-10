@@ -1084,8 +1084,10 @@ function closeStarEmpires() {
 function renderStarEmpiresList() {
   const tbody = document.getElementById('se-players-list');
 
-  // Get all players sorted by player number
-  const players = [...gameState.players].sort((a, b) => a.player_number - b.player_number);
+  // Get all players sorted by player number (exclude Pirates)
+  const players = [...gameState.players]
+    .filter(p => !p.is_pirates)
+    .sort((a, b) => a.player_number - b.player_number);
 
   tbody.innerHTML = players.map(player => {
     // Use server-provided counts (includes all planets/mechs, not just visible ones)
@@ -1135,6 +1137,40 @@ function renderStarEmpiresList() {
 }
 
 // ==================== END STAR EMPIRES ====================
+
+// ==================== RETIRE EMPIRE ====================
+
+function openRetireModal() {
+  // Don't allow retire if already eliminated or game is finished
+  if (gameState.isEliminated || gameState.status === 'finished') {
+    return;
+  }
+  document.getElementById('retire-modal').style.display = 'flex';
+}
+
+function closeRetireModal() {
+  document.getElementById('retire-modal').style.display = 'none';
+}
+
+async function confirmRetire() {
+  try {
+    const response = await api.post(`/api/games/${gameState.gameId}/retire`);
+    if (response.error) {
+      alert('Failed to retire: ' + response.error);
+      return;
+    }
+
+    closeRetireModal();
+
+    // Refresh game state - this will trigger defeat screen and observer mode
+    await loadGameState();
+  } catch (error) {
+    console.error('Failed to retire:', error);
+    alert('Failed to retire. Please try again.');
+  }
+}
+
+// ==================== END RETIRE EMPIRE ====================
 
 function getPlayerName(playerId) {
   const player = gameState.players.find(p => p.id === playerId);
@@ -2404,6 +2440,9 @@ function setupUIHandlers() {
     }
   });
 
+  // Retire button
+  document.getElementById('btn-retire').addEventListener('click', openRetireModal);
+
   // Turn Summary handlers
   document.getElementById('start-turn-btn').addEventListener('click', closeTurnSummary);
   document.getElementById('turn-summary-entries').addEventListener('click', () => {
@@ -3174,6 +3213,9 @@ function enterObserverMode() {
   document.getElementById('submit-turn').style.display = 'none';
   document.getElementById('waiting-indicator').style.display = 'none';
   document.getElementById('waiting-for-players').style.display = 'none';
+
+  // Hide retire button (can't retire if already eliminated/winner)
+  document.getElementById('btn-retire').style.display = 'none';
 
   // Update observer player list
   updateObserverPanel();

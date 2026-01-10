@@ -573,4 +573,131 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// Retire from a game (surrender to Pirates)
+router.post('/:id/retire', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+
+    // Get game details
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    if (game.status !== 'active') {
+      return res.status(400).json({ error: 'Can only retire from active games' });
+    }
+
+    // Get player's record
+    const player = db.prepare(`
+      SELECT * FROM game_players WHERE game_id = ? AND user_id = ?
+    `).get(gameId, req.user.id);
+
+    if (!player) {
+      return res.status(403).json({ error: 'You are not in this game' });
+    }
+
+    if (player.is_eliminated) {
+      return res.status(400).json({ error: 'You are already eliminated' });
+    }
+
+    // Get or create Pirates player for this game
+    let piratesPlayer = db.prepare(`
+      SELECT * FROM game_players WHERE game_id = ? AND empire_name = 'Pirates'
+    `).get(gameId);
+
+    if (!piratesPlayer) {
+      // Create Pirates player with special negative user_id
+      const piratesUserId = -999;
+      db.prepare(`
+        INSERT INTO game_players (game_id, user_id, player_number, credits, is_eliminated, empire_name, empire_color, is_ai)
+        VALUES (?, ?, 0, 0, 0, 'Pirates', '#404040', 1)
+      `).run(gameId, piratesUserId);
+
+      piratesPlayer = db.prepare(`
+        SELECT * FROM game_players WHERE game_id = ? AND empire_name = 'Pirates'
+      `).get(gameId);
+    }
+
+    // Get player's planets and mechs for combat log
+    const playerPlanets = db.prepare(`
+      SELECT * FROM planets WHERE game_id = ? AND owner_id = ?
+    `).all(gameId, player.id);
+
+    const playerMechs = db.prepare(`
+      SELECT * FROM mechs WHERE game_id = ? AND owner_id = ?
+    `).all(gameId, player.id);
+
+    // Transfer all planets to Pirates
+    db.prepare(`
+      UPDATE planets SET owner_id = ? WHERE game_id = ? AND owner_id = ?
+    `).run(piratesPlayer.id, gameId, player.id);
+
+    // Transfer all mechs to Pirates
+    db.prepare(`
+      UPDATE mechs SET owner_id = ? WHERE game_id = ? AND owner_id = ?
+    `).run(piratesPlayer.id, gameId, player.id);
+
+    // Mark player as eliminated
+    db.prepare(`
+      UPDATE game_players SET is_eliminated = 1 WHERE id = ?
+    `).run(player.id);
+
+    // Create combat log entry for retirement
+    db.prepare(`
+      INSERT INTO combat_logs (game_id, turn_number, x, y, log_type, participants, detailed_log)
+      VALUES (?, ?, 0, 0, 'defeat', ?, ?)
+    `).run(
+      gameId,
+      game.current_turn,
+      JSON.stringify([player.id]),
+      JSON.stringify({
+        type: 'retirement',
+        empireName: player.empire_name,
+        planetsLost: playerPlanets.length,
+        mechsLost: playerMechs.length
+      })
+    );
+
+    // Check if game is over (only one non-eliminated, non-pirate player remains)
+    const remainingPlayers = db.prepare(`
+      SELECT * FROM game_players
+      WHERE game_id = ? AND is_eliminated = 0 AND empire_name != 'Pirates'
+    `).all(gameId);
+
+    if (remainingPlayers.length === 1) {
+      // Game over - declare winner
+      const winner = remainingPlayers[0];
+      db.prepare(`
+        UPDATE games SET status = 'finished', winner_id = ? WHERE id = ?
+      `).run(winner.user_id, gameId);
+
+      // Create victory combat log
+      db.prepare(`
+        INSERT INTO combat_logs (game_id, turn_number, x, y, log_type, participants, winner_id, detailed_log)
+        VALUES (?, ?, 0, 0, 'game_won', ?, ?, ?)
+      `).run(
+        gameId,
+        game.current_turn,
+        JSON.stringify([winner.id]),
+        winner.id,
+        JSON.stringify({ type: 'victory', empireName: winner.empire_name })
+      );
+
+      console.log(`Game ${gameId} won by ${winner.empire_name} after ${player.empire_name} retired`);
+    }
+
+    // Broadcast update to all players
+    if (broadcastToGame) {
+      broadcastToGame(gameId, { type: 'player_retired', playerId: player.id });
+    }
+
+    console.log(`${player.empire_name} retired from game ${gameId}, assets transferred to Pirates`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to retire:', error);
+    res.status(500).json({ error: 'Failed to retire' });
+  }
+});
+
 module.exports = router;
