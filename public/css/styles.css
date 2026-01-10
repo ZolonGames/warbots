@@ -2478,6 +2478,20 @@ a:hover {
   font-style: italic;
 }
 
+.mm-orders.mm-waypoint {
+  color: var(--accent-yellow);
+}
+
+.mm-orders.mm-waypoint:hover {
+  color: #ffdd88;
+}
+
+.mm-turns {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
 .mm-empty {
   text-align: center;
   color: var(--text-secondary);

@@ -924,7 +924,11 @@ function renderForceRow(x, y, mechs) {
   // Orders HTML
   let ordersHtml = '';
   if (forceOrders.allSameDestination) {
-    ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">→ (${forceOrders.destination.x}, ${forceOrders.destination.y})</span>`;
+    if (forceOrders.isWaypoint) {
+      ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">⇢ (${forceOrders.destination.x}, ${forceOrders.destination.y}) <span class="mm-turns">${forceOrders.turns}t</span></span>`;
+    } else {
+      ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">→ (${forceOrders.destination.x}, ${forceOrders.destination.y})</span>`;
+    }
   } else if (forceOrders.hasMixedOrders) {
     ordersHtml = '<span class="mm-orders-mixed">Mixed orders</span>';
   } else {
@@ -961,10 +965,16 @@ function renderForceRow(x, y, mechs) {
 
 function renderForceMechRow(mech) {
   const moveOrder = pendingOrders.moves.find(m => m.mechId === mech.id);
+  const waypoint = pendingOrders.waypoints.find(w => w.mechId === mech.id);
 
-  // Orders HTML
+  // Orders HTML - prefer showing waypoint if exists
   let ordersHtml = '';
-  if (moveOrder) {
+  const hasOrder = moveOrder || waypoint;
+
+  if (waypoint) {
+    const turns = Math.max(Math.abs(waypoint.targetX - mech.x), Math.abs(waypoint.targetY - mech.y));
+    ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${waypoint.targetX}, ${waypoint.targetY})">⇢ (${waypoint.targetX}, ${waypoint.targetY}) <span class="mm-turns">${turns}t</span></span>`;
+  } else if (moveOrder) {
     ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${moveOrder.toX}, ${moveOrder.toY})">→ (${moveOrder.toX}, ${moveOrder.toY})</span>`;
   } else {
     ordersHtml = '<span class="mm-no-orders">—</span>';
@@ -978,7 +988,7 @@ function renderForceMechRow(mech) {
       <td>${mech.hp} / ${mech.max_hp}</td>
       <td></td>
       <td>${ordersHtml}</td>
-      <td>${moveOrder ? `<button class="mm-cancel-btn mm-cancel-small" onclick="cancelMechOrder(${mech.id})">✕</button>` : ''}</td>
+      <td>${hasOrder ? `<button class="mm-cancel-btn mm-cancel-small" onclick="cancelMechOrder(${mech.id})">✕</button>` : ''}</td>
     </tr>
   `;
 }
@@ -988,12 +998,17 @@ function renderMechRow(mech) {
   const planet = gameState.planets.find(p => p.x === mech.x && p.y === mech.y);
   const locationHtml = getLocationHtml(planet);
 
-  // Check for pending move orders
+  // Check for pending move orders and waypoints
   const moveOrder = pendingOrders.moves.find(m => m.mechId === mech.id);
+  const waypoint = pendingOrders.waypoints.find(w => w.mechId === mech.id);
+  const hasOrder = moveOrder || waypoint;
 
-  // Orders HTML
+  // Orders HTML - prefer showing waypoint if exists
   let ordersHtml = '';
-  if (moveOrder) {
+  if (waypoint) {
+    const turns = Math.max(Math.abs(waypoint.targetX - mech.x), Math.abs(waypoint.targetY - mech.y));
+    ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${waypoint.targetX}, ${waypoint.targetY})">⇢ (${waypoint.targetX}, ${waypoint.targetY}) <span class="mm-turns">${turns}t</span></span>`;
+  } else if (moveOrder) {
     ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${moveOrder.toX}, ${moveOrder.toY})">→ (${moveOrder.toX}, ${moveOrder.toY})</span>`;
   } else {
     ordersHtml = '<span class="mm-no-orders">—</span>';
@@ -1007,7 +1022,7 @@ function renderMechRow(mech) {
       <td class="mm-location">${locationHtml}</td>
       <td>${mech.hp} / ${mech.max_hp}</td>
       <td>${ordersHtml}</td>
-      <td>${moveOrder ? `<button class="mm-cancel-btn" onclick="cancelMechOrder(${mech.id})">Cancel</button>` : ''}</td>
+      <td>${hasOrder ? `<button class="mm-cancel-btn" onclick="cancelMechOrder(${mech.id})">Cancel</button>` : ''}</td>
     </tr>
   `;
 }
@@ -1021,21 +1036,36 @@ function getLocationHtml(planet) {
 }
 
 function getForceOrders(mechs) {
+  // Get waypoints and move orders for all mechs
+  const waypoints = mechs.map(m => pendingOrders.waypoints.find(w => w.mechId === m.id)).filter(Boolean);
   const orders = mechs.map(m => pendingOrders.moves.find(o => o.mechId === m.id)).filter(Boolean);
 
-  if (orders.length === 0) {
+  const hasAnyOrders = orders.length > 0 || waypoints.length > 0;
+
+  if (!hasAnyOrders) {
     return { hasAnyOrders: false, allSameDestination: false, hasMixedOrders: false };
   }
 
-  // Check if all have same destination
-  const firstDest = orders[0];
-  const allSame = orders.every(o => o.toX === firstDest.toX && o.toY === firstDest.toY);
-
-  if (allSame && orders.length === mechs.length) {
-    return { hasAnyOrders: true, allSameDestination: true, destination: { x: firstDest.toX, y: firstDest.toY }, hasMixedOrders: false };
+  // If all mechs have waypoints to the same destination
+  if (waypoints.length === mechs.length) {
+    const firstWp = waypoints[0];
+    const allSameWaypoint = waypoints.every(w => w.targetX === firstWp.targetX && w.targetY === firstWp.targetY);
+    if (allSameWaypoint) {
+      const turns = Math.max(Math.abs(firstWp.targetX - mechs[0].x), Math.abs(firstWp.targetY - mechs[0].y));
+      return { hasAnyOrders: true, allSameDestination: true, isWaypoint: true, destination: { x: firstWp.targetX, y: firstWp.targetY }, turns, hasMixedOrders: false };
+    }
   }
 
-  return { hasAnyOrders: true, allSameDestination: false, hasMixedOrders: orders.length > 0 };
+  // If all mechs have move orders to the same destination (and no waypoints)
+  if (orders.length === mechs.length && waypoints.length === 0) {
+    const firstDest = orders[0];
+    const allSame = orders.every(o => o.toX === firstDest.toX && o.toY === firstDest.toY);
+    if (allSame) {
+      return { hasAnyOrders: true, allSameDestination: true, isWaypoint: false, destination: { x: firstDest.toX, y: firstDest.toY }, hasMixedOrders: false };
+    }
+  }
+
+  return { hasAnyOrders: true, allSameDestination: false, hasMixedOrders: true };
 }
 
 function toggleForceExpand(locationKey) {
