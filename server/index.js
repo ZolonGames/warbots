@@ -5,6 +5,13 @@ const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 const passport = require('passport');
 const path = require('path');
+const fs = require('fs');
+
+// Ensure sessions directory exists
+const sessionsDir = path.join(__dirname, '../data/sessions');
+if (!fs.existsSync(sessionsDir)) {
+  fs.mkdirSync(sessionsDir, { recursive: true });
+}
 
 const { initializeDatabase } = require('./config/database');
 const authRoutes = require('./routes/auth');
