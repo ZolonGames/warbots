@@ -1056,14 +1056,22 @@ function navigateToCoords(x, y) {
 }
 
 function cancelMechOrder(mechId) {
+  // Remove move order
   const idx = pendingOrders.moves.findIndex(m => m.mechId === mechId);
   if (idx !== -1) {
     pendingOrders.moves.splice(idx, 1);
-    updateOrdersList();
-    updateMovementArrows();
-    saveOrdersToStorage(gameState.id, gameState.currentTurn);
-    renderMechManagementLists();
   }
+
+  // Also remove any waypoint for this mech
+  const waypointIdx = pendingOrders.waypoints.findIndex(w => w.mechId === mechId);
+  if (waypointIdx !== -1) {
+    pendingOrders.waypoints.splice(waypointIdx, 1);
+  }
+
+  updateOrdersList();
+  updateMovementArrows();
+  saveOrdersToStorage(gameState.id, gameState.currentTurn);
+  renderMechManagementLists();
 }
 
 function cancelForceOrders(x, y) {
@@ -1073,6 +1081,9 @@ function cancelForceOrders(x, y) {
 
   // Remove all move orders for these mechs
   pendingOrders.moves = pendingOrders.moves.filter(m => !mechIds.has(m.mechId));
+
+  // Also remove all waypoints for these mechs
+  pendingOrders.waypoints = pendingOrders.waypoints.filter(w => !mechIds.has(w.mechId));
 
   updateOrdersList();
   updateMovementArrows();
