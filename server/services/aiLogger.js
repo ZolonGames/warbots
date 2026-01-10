@@ -4,10 +4,35 @@ const path = require('path');
 // Log file path
 const LOG_FILE = path.join(__dirname, '../../data/ai.log');
 
+// Maximum lines to keep in log file
+const MAX_LOG_LINES = 10000;
+
 // Ensure data directory exists
 const dataDir = path.dirname(LOG_FILE);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
+}
+
+/**
+ * Cull log file to keep only the most recent lines
+ * Removes older entries beyond MAX_LOG_LINES
+ */
+function cullLog() {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return;
+
+    const content = fs.readFileSync(LOG_FILE, 'utf8');
+    const lines = content.split('\n');
+
+    // Only cull if we exceed the limit
+    if (lines.length <= MAX_LOG_LINES) return;
+
+    // Keep only the most recent lines
+    const recentLines = lines.slice(-MAX_LOG_LINES);
+    fs.writeFileSync(LOG_FILE, recentLines.join('\n'));
+  } catch (error) {
+    console.error('Failed to cull AI log:', error);
+  }
 }
 
 /**
@@ -39,6 +64,9 @@ function logSeparator() {
  * @param {number} turnNumber - Turn number
  */
 function logTurnStart(gameId, turnNumber) {
+  // Cull old log entries periodically
+  cullLog();
+
   logSeparator();
   log(`NEW TURN: Game ${gameId}, Turn ${turnNumber}`);
   logSeparator();
@@ -147,5 +175,6 @@ module.exports = {
   logBuildBuilding,
   logTurnSubmit,
   logAnalysis,
-  logError
+  logError,
+  cullLog
 };

@@ -785,6 +785,98 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
     }
   }
 
+  // EARLY GAME PRIORITY: Exploration and expansion
+  // In early game, send light mechs to explore undiscovered areas and claim neutral planets
+  // This should happen BEFORE attack grouping to ensure expansion happens
+  if (analysis.isEarlyGame || ownedPlanets.length < 8) {
+    // First, expand to visible neutral planets (higher priority in early game)
+    if (neutralPlanets.length > 0) {
+      // Sort neutral planets by distance
+      const sortedNeutrals = [...neutralPlanets].sort((a, b) => {
+        if (ownedPlanets.length === 0) return 0;
+        const distA = Math.min(...ownedPlanets.map(p =>
+          Math.sqrt((a.x - p.x) ** 2 + (a.y - p.y) ** 2)
+        ));
+        const distB = Math.min(...ownedPlanets.map(p =>
+          Math.sqrt((b.x - p.x) ** 2 + (b.y - p.y) ** 2)
+        ));
+        return distA - distB;
+      });
+
+      // In early game, claim up to 4 neutral planets per turn
+      const maxNeutralsToClaimEarly = analysis.isEarlyGame ? 4 : 2;
+      for (const neutralPlanet of sortedNeutrals.slice(0, maxNeutralsToClaimEarly)) {
+        // Find nearest unassigned mech (strongly prefer light mechs)
+        let nearestMech = null;
+        let nearestDist = Infinity;
+
+        for (const mech of ownedMechs) {
+          if (assignedMechs.has(mech.id)) continue;
+
+          const dist = Math.sqrt(
+            (mech.x - neutralPlanet.x) ** 2 +
+            (mech.y - neutralPlanet.y) ** 2
+          );
+
+          // Strongly prefer light mechs (multiply distance by 0.3 to heavily favor them)
+          const adjustedDist = mech.type === 'light' ? dist * 0.3 : dist;
+
+          if (adjustedDist < nearestDist) {
+            nearestDist = adjustedDist;
+            nearestMech = mech;
+          }
+        }
+
+        if (nearestMech) {
+          const move = moveToward(nearestMech.x, nearestMech.y, neutralPlanet.x, neutralPlanet.y, gridSize);
+          if (move) {
+            moves.push({ mechId: nearestMech.id, toX: move.x, toY: move.y });
+            assignedMechs.add(nearestMech.id);
+          }
+        }
+      }
+    }
+
+    // EXPLORATION: Send light mechs to unexplored areas to discover new planets
+    const explorationTargets = generateExplorationTargets(gameState, ownedMechs, assignedMechs);
+
+    // Send up to 3 light mechs to explore in early game
+    const maxExplorers = analysis.isEarlyGame ? 3 : 1;
+    let explorersSent = 0;
+
+    for (const target of explorationTargets) {
+      if (explorersSent >= maxExplorers) break;
+
+      // Find nearest unassigned light mech
+      let bestMech = null;
+      let bestDist = Infinity;
+
+      for (const mech of ownedMechs) {
+        if (assignedMechs.has(mech.id)) continue;
+        if (mech.type !== 'light') continue; // Only use light mechs for exploration
+
+        const dist = Math.sqrt(
+          (mech.x - target.x) ** 2 +
+          (mech.y - target.y) ** 2
+        );
+
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestMech = mech;
+        }
+      }
+
+      if (bestMech) {
+        const move = moveToward(bestMech.x, bestMech.y, target.x, target.y, gridSize);
+        if (move) {
+          moves.push({ mechId: bestMech.id, toX: move.x, toY: move.y });
+          assignedMechs.add(bestMech.id);
+          explorersSent++;
+        }
+      }
+    }
+  }
+
   // Priority 2: Form attack groups - consolidate mechs to LIMITED rally points
   // Key fix: Only use TOP 2 rally points to force consolidation, not every mech location
   const unassignedMechs = ownedMechs.filter(m => !assignedMechs.has(m.id));
@@ -969,6 +1061,84 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
   }
 
   return moves;
+}
+
+/**
+ * Generate exploration targets for discovering new areas of the map
+ * Returns array of {x, y} coordinates in unexplored areas, prioritized by distance from owned planets
+ */
+function generateExplorationTargets(gameState, ownedMechs, assignedMechs) {
+  const { visibleTiles, ownedPlanets, gridSize } = gameState;
+  const targets = [];
+
+  // Find the bounding box of our territory
+  let minX = gridSize, maxX = 0, minY = gridSize, maxY = 0;
+  for (const planet of ownedPlanets) {
+    minX = Math.min(minX, planet.x);
+    maxX = Math.max(maxX, planet.x);
+    minY = Math.min(minY, planet.y);
+    maxY = Math.max(maxY, planet.y);
+  }
+
+  // Also consider mech positions for exploration range
+  for (const mech of ownedMechs) {
+    minX = Math.min(minX, mech.x);
+    maxX = Math.max(maxX, mech.x);
+    minY = Math.min(minY, mech.y);
+    maxY = Math.max(maxY, mech.y);
+  }
+
+  // Generate exploration targets at the edges of our visibility
+  // Look for tiles that are just outside our current vision
+  const explorationRadius = 8; // How far to look for exploration targets
+  const candidateTargets = [];
+
+  // Expand search area beyond our current territory
+  const searchMinX = Math.max(0, minX - explorationRadius);
+  const searchMaxX = Math.min(gridSize - 1, maxX + explorationRadius);
+  const searchMinY = Math.max(0, minY - explorationRadius);
+  const searchMaxY = Math.min(gridSize - 1, maxY + explorationRadius);
+
+  // Sample potential exploration points at regular intervals
+  const step = 4; // Check every 4 tiles
+  for (let x = searchMinX; x <= searchMaxX; x += step) {
+    for (let y = searchMinY; y <= searchMaxY; y += step) {
+      const key = `${x},${y}`;
+
+      // Skip if already visible
+      if (visibleTiles.has(key)) continue;
+
+      // Check if this unexplored tile is adjacent to visible tiles (frontier)
+      let isNearVisible = false;
+      for (let dx = -3; dx <= 3; dx++) {
+        for (let dy = -3; dy <= 3; dy++) {
+          const neighborKey = `${x + dx},${y + dy}`;
+          if (visibleTiles.has(neighborKey)) {
+            isNearVisible = true;
+            break;
+          }
+        }
+        if (isNearVisible) break;
+      }
+
+      if (isNearVisible) {
+        // Calculate distance from nearest owned planet
+        let nearestDist = Infinity;
+        for (const planet of ownedPlanets) {
+          const dist = Math.sqrt((x - planet.x) ** 2 + (y - planet.y) ** 2);
+          nearestDist = Math.min(nearestDist, dist);
+        }
+
+        candidateTargets.push({ x, y, dist: nearestDist });
+      }
+    }
+  }
+
+  // Sort by distance (closest unexplored areas first)
+  candidateTargets.sort((a, b) => a.dist - b.dist);
+
+  // Return top exploration targets
+  return candidateTargets.slice(0, 6).map(t => ({ x: t.x, y: t.y }));
 }
 
 /**
