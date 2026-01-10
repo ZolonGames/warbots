@@ -79,9 +79,10 @@ function getVisiblePlanets(gameId, playerId, visibleTiles) {
   for (const planet of allPlanets) {
     const key = `${planet.x},${planet.y}`;
     if (visibleTiles.has(key)) {
-      // Get buildings for this planet
+      // Get buildings for this planet (fortifications have max_hp 30, others 10)
       const buildings = db.prepare(`
-        SELECT type, hp, max_hp FROM buildings WHERE planet_id = ?
+        SELECT type, hp, CASE WHEN type = 'fortification' THEN 30 ELSE 10 END as max_hp
+        FROM buildings WHERE planet_id = ?
       `).all(planet.id);
 
       visiblePlanets.push({

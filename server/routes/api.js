@@ -74,7 +74,7 @@ router.get('/games/:id/state', (req, res) => {
     const planets = isObserver
       ? db.prepare(`
           SELECT p.*,
-            (SELECT json_group_array(json_object('id', b.id, 'type', b.type, 'hp', b.hp, 'max_hp', b.max_hp))
+            (SELECT json_group_array(json_object('id', b.id, 'type', b.type, 'hp', b.hp, 'max_hp', CASE WHEN b.type = 'fortification' THEN 30 ELSE 10 END))
              FROM buildings b WHERE b.planet_id = p.id) as buildings_json
           FROM planets p WHERE p.game_id = ?
         `).all(gameId).map(p => ({
