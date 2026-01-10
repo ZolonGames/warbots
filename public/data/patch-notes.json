@@ -1,6 +1,14 @@
 {
   "notes": [
     {
+      "version": "1.4.2",
+      "date": "2026-01-10",
+      "changes": [
+        "Fixed move arrow not updating when overriding a waypoint with a 1-tile move",
+        "Reduced planet spacing to 3.5 tiles for denser maps"
+      ]
+    },
+    {
       "version": "1.4.1",
       "date": "2026-01-10",
       "changes": [
