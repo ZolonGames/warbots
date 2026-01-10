@@ -81,7 +81,7 @@ function getVisiblePlanets(gameId, playerId, visibleTiles) {
     if (visibleTiles.has(key)) {
       // Get buildings for this planet
       const buildings = db.prepare(`
-        SELECT type, hp FROM buildings WHERE planet_id = ?
+        SELECT type, hp, max_hp FROM buildings WHERE planet_id = ?
       `).all(planet.id);
 
       visiblePlanets.push({
