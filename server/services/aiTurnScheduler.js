@@ -284,8 +284,49 @@ function clearScheduledAITurns(gameId) {
   scheduledAITurns.delete(gameId);
 }
 
+/**
+ * Check all active games for AI players that haven't submitted their turn
+ * Called on server startup to recover from crashes/restarts
+ */
+function checkPendingAITurns() {
+  console.log('Checking for pending AI turns...');
+
+  // Get all active games
+  const activeGames = db.prepare(`
+    SELECT id, name, current_turn FROM games WHERE status = 'active'
+  `).all();
+
+  let pendingCount = 0;
+
+  for (const game of activeGames) {
+    // Check for AI players who haven't submitted
+    const pendingAI = db.prepare(`
+      SELECT * FROM game_players
+      WHERE game_id = ? AND is_ai = 1 AND is_eliminated = 0 AND has_submitted_turn = 0
+        AND empire_name != 'Pirates'
+    `).all(game.id);
+
+    if (pendingAI.length > 0) {
+      console.log(`Game ${game.id} (${game.name}) turn ${game.current_turn}: ${pendingAI.length} AI player(s) need to submit`);
+      pendingCount += pendingAI.length;
+
+      // Schedule AI turns for this game (with a small staggered delay)
+      setTimeout(() => {
+        scheduleAITurns(game.id);
+      }, 2000); // 2 second delay to let server fully initialize
+    }
+  }
+
+  if (pendingCount === 0) {
+    console.log('No pending AI turns found');
+  } else {
+    console.log(`Found ${pendingCount} pending AI turn(s) across ${activeGames.length} active game(s)`);
+  }
+}
+
 module.exports = {
   scheduleAITurns,
   clearScheduledAITurns,
-  setBroadcastFunction
+  setBroadcastFunction,
+  checkPendingAITurns
 };

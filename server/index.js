@@ -12,6 +12,7 @@ const gamesRoutes = require('./routes/games');
 const apiRoutes = require('./routes/api');
 const turnsRoutes = require('./routes/turns');
 const { checkTurnTimers } = require('./services/turnProcessor');
+const { checkPendingAITurns } = require('./services/aiTurnScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,6 +71,9 @@ async function startServer() {
 
     // Check turn timers every 30 seconds
     setInterval(checkTurnTimers, 30000);
+
+    // Check for any AI turns that need to be submitted (recovery from restart)
+    checkPendingAITurns();
   });
 }
 
