@@ -1,6 +1,15 @@
 {
   "notes": [
     {
+      "version": "1.4.3",
+      "date": "2026-01-10",
+      "changes": [
+        "Fixed defense HP showing as undefined in Planet Management",
+        "AI players now recover and submit turns after server restart",
+        "Turn count only shows while dragging, not on placed waypoint arrows"
+      ]
+    },
+    {
       "version": "1.4.2",
       "date": "2026-01-10",
       "changes": [
