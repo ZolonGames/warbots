@@ -59,7 +59,7 @@ async function startServer() {
 
   // Static files
   app.use(express.static(path.join(__dirname, '../public')));
-  app.use('/assets', express.static(path.join(__dirname, '../data/assets/icons')));
+  app.use('/assets', express.static(path.join(__dirname, '../public/assets/icons')));
 
   // Routes
   app.use('/auth', authRoutes);
