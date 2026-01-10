@@ -533,37 +533,6 @@ class GameMap {
         ctx.closePath();
         ctx.fill();
 
-        // Draw turn count label
-        const turns = Math.max(
-          Math.abs(waypoint.targetX - mech.x),
-          Math.abs(waypoint.targetY - mech.y)
-        );
-        const turnText = turns === 1 ? '1 turn' : `${turns} turns`;
-
-        // Position label at midpoint of the line
-        const midX = (fromX + toX) / 2;
-        const midY = (fromY + toY) / 2;
-
-        // Draw background for text
-        const fontSize = Math.max(10, tileSize * 0.4);
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        const textMetrics = ctx.measureText(turnText);
-        const padding = 4;
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(
-          midX - textMetrics.width / 2 - padding,
-          midY - fontSize / 2 - padding,
-          textMetrics.width + padding * 2,
-          fontSize + padding * 2
-        );
-
-        // Draw text
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(turnText, midX, midY);
-
         // Draw target marker (circle at destination)
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
