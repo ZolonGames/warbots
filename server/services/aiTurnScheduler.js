@@ -6,8 +6,8 @@ const aiLogger = require('./aiLogger');
 // Store scheduled AI turns to prevent duplicates
 const scheduledAITurns = new Map(); // gameId -> Set of aiPlayerIds
 
-// AI turn delay in milliseconds (20 seconds)
-const AI_TURN_DELAY = 20000;
+// AI turn delay in milliseconds (5 seconds)
+const AI_TURN_DELAY = 5000;
 
 // Get broadcast function (will be set after api.js loads)
 let broadcastToGame = null;
