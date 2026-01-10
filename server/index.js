@@ -24,6 +24,11 @@ const { checkPendingAITurns } = require('./services/aiTurnScheduler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy for secure cookies behind Railway's reverse proxy
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Start server after database is initialized
 async function startServer() {
   // Initialize database
