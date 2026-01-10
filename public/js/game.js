@@ -925,7 +925,8 @@ function renderForceRow(x, y, mechs) {
   let ordersHtml = '';
   if (forceOrders.allSameDestination) {
     if (forceOrders.isWaypoint) {
-      ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">⇢ (${forceOrders.destination.x}, ${forceOrders.destination.y}) <span class="mm-turns">${forceOrders.turns}t</span></span>`;
+      const turnText = forceOrders.turns === 1 ? '1 turn' : `${forceOrders.turns} turns`;
+      ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">⇢ (${forceOrders.destination.x}, ${forceOrders.destination.y}) <span class="mm-turns">${turnText}</span></span>`;
     } else {
       ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">→ (${forceOrders.destination.x}, ${forceOrders.destination.y})</span>`;
     }
@@ -973,7 +974,8 @@ function renderForceMechRow(mech) {
 
   if (waypoint) {
     const turns = Math.max(Math.abs(waypoint.targetX - mech.x), Math.abs(waypoint.targetY - mech.y));
-    ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${waypoint.targetX}, ${waypoint.targetY})">⇢ (${waypoint.targetX}, ${waypoint.targetY}) <span class="mm-turns">${turns}t</span></span>`;
+    const turnText = turns === 1 ? '1 turn' : `${turns} turns`;
+    ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${waypoint.targetX}, ${waypoint.targetY})">⇢ (${waypoint.targetX}, ${waypoint.targetY}) <span class="mm-turns">${turnText}</span></span>`;
   } else if (moveOrder) {
     ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${moveOrder.toX}, ${moveOrder.toY})">→ (${moveOrder.toX}, ${moveOrder.toY})</span>`;
   } else {
@@ -1007,7 +1009,8 @@ function renderMechRow(mech) {
   let ordersHtml = '';
   if (waypoint) {
     const turns = Math.max(Math.abs(waypoint.targetX - mech.x), Math.abs(waypoint.targetY - mech.y));
-    ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${waypoint.targetX}, ${waypoint.targetY})">⇢ (${waypoint.targetX}, ${waypoint.targetY}) <span class="mm-turns">${turns}t</span></span>`;
+    const turnText = turns === 1 ? '1 turn' : `${turns} turns`;
+    ordersHtml = `<span class="mm-orders mm-waypoint" onclick="navigateToCoords(${waypoint.targetX}, ${waypoint.targetY})">⇢ (${waypoint.targetX}, ${waypoint.targetY}) <span class="mm-turns">${turnText}</span></span>`;
   } else if (moveOrder) {
     ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${moveOrder.toX}, ${moveOrder.toY})">→ (${moveOrder.toX}, ${moveOrder.toY})</span>`;
   } else {
