@@ -1162,8 +1162,8 @@ async function confirmRetire() {
 
     closeRetireModal();
 
-    // Refresh game state - this will trigger defeat screen and observer mode
-    await loadGameState();
+    // Show defeat announcement and enter observer mode
+    showTurnAnnouncement(gameState.currentTurn, 'defeat');
   } catch (error) {
     console.error('Failed to retire:', error);
     alert('Failed to retire. Please try again.');
@@ -3236,7 +3236,9 @@ function updateObserverPanel() {
   if (!container || !gameState.players) return;
 
   let html = '';
-  for (const player of gameState.players) {
+  // Filter out Pirates from the observer panel
+  const visiblePlayers = gameState.players.filter(p => !p.is_pirates);
+  for (const player of visiblePlayers) {
     const isVictor = gameState.winnerId === player.id;
     const isDefeated = player.is_eliminated === 1;
 
@@ -3351,6 +3353,11 @@ async function refreshGameState(gameId) {
     updateMapState();
     updateEventLog();
     refreshMechsPanel();
+
+    // Update Star Empires if modal is open
+    if (document.getElementById('star-empires-overlay').style.display !== 'none') {
+      renderStarEmpiresList();
+    }
 
     // Update lobby panel if still waiting
     if (gameState.status === 'waiting') {

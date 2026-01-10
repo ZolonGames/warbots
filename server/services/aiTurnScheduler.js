@@ -116,11 +116,12 @@ function submitAITurn(gameId, aiPlayerId) {
     console.log(`AI ${aiPlayer.empire_name} submitted turn with ${orders.moves?.length || 0} moves and ${orders.builds?.length || 0} builds`);
     aiLogger.logTurnSubmit(aiPlayer.empire_name, orders.moves?.length || 0, orders.builds?.length || 0);
 
-    // Check if all players have submitted
+    // Check if all players have submitted (exclude Pirates)
     const pendingPlayers = db.prepare(`
       SELECT COUNT(*) as count
       FROM game_players
       WHERE game_id = ? AND is_eliminated = 0 AND has_submitted_turn = 0
+        AND empire_name != 'Pirates'
     `).get(gameId).count;
 
     if (pendingPlayers === 0) {

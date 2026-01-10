@@ -64,11 +64,12 @@ router.post('/games/:id/turns', (req, res) => {
       UPDATE game_players SET has_submitted_turn = 1, pending_orders = NULL WHERE id = ?
     `).run(player.id);
 
-    // Check if all players have submitted
+    // Check if all players have submitted (exclude Pirates)
     const pendingPlayers = db.prepare(`
       SELECT COUNT(*) as count
       FROM game_players
       WHERE game_id = ? AND is_eliminated = 0 AND has_submitted_turn = 0
+        AND empire_name != 'Pirates'
     `).get(gameId).count;
 
     if (pendingPlayers === 0) {
@@ -154,12 +155,13 @@ router.get('/games/:id/turns/status', (req, res) => {
     const gameId = parseInt(req.params.id);
 
     // Use LEFT JOIN to handle AI players (who have no user record)
+    // Exclude Pirates from turn status
     const players = db.prepare(`
       SELECT gp.player_number, gp.has_submitted_turn, gp.is_eliminated, gp.is_ai,
              COALESCE(u.display_name, gp.empire_name) as display_name
       FROM game_players gp
       LEFT JOIN users u ON gp.user_id = u.id
-      WHERE gp.game_id = ?
+      WHERE gp.game_id = ? AND gp.empire_name != 'Pirates'
       ORDER BY gp.player_number
     `).all(gameId);
 
