@@ -45,6 +45,11 @@ function getOrdersStorageKey(gameId, turnNumber) {
 function saveOrdersToStorage(gameId, turnNumber) {
   const key = getOrdersStorageKey(gameId, turnNumber);
   localStorage.setItem(key, JSON.stringify(pendingOrders));
+
+  // Also save to server (fire and forget - don't await)
+  api.savePendingOrders(gameId, pendingOrders).catch(err => {
+    console.warn('Failed to save orders to server:', err);
+  });
 }
 
 function loadOrdersFromStorage(gameId, turnNumber) {
@@ -66,6 +71,44 @@ function loadOrdersFromStorage(gameId, turnNumber) {
 function clearOrdersFromStorage(gameId, turnNumber) {
   const key = getOrdersStorageKey(gameId, turnNumber);
   localStorage.removeItem(key);
+}
+
+async function loadPendingOrders(gameId, turnNumber) {
+  let savedOrders = null;
+
+  // Try to load from server first
+  try {
+    const serverOrders = await api.getPendingOrders(gameId);
+    if (serverOrders && (serverOrders.moves?.length > 0 || serverOrders.builds?.length > 0)) {
+      savedOrders = serverOrders;
+      console.log('Loaded orders from server');
+    }
+  } catch (err) {
+    console.warn('Failed to load orders from server:', err);
+  }
+
+  // Fall back to localStorage if server has no orders
+  if (!savedOrders) {
+    savedOrders = loadOrdersFromStorage(gameId, turnNumber);
+    if (savedOrders) {
+      console.log('Loaded orders from localStorage');
+      // Sync to server
+      api.savePendingOrders(gameId, savedOrders).catch(() => {});
+    }
+  }
+
+  if (savedOrders) {
+    pendingOrders = savedOrders;
+    // Recalculate displayed credits based on saved build orders
+    for (const order of pendingOrders.builds) {
+      if (order.cost) {
+        displayedCredits -= order.cost;
+      }
+    }
+    updateCreditsDisplay();
+    updateOrdersList();
+    updateMovementArrows();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -119,19 +162,7 @@ async function initGame(gameId) {
 
     // Load saved orders for this turn (if any)
     if (gameState.status === 'active' && !gameState.isObserver) {
-      const savedOrders = loadOrdersFromStorage(gameId, gameState.currentTurn);
-      if (savedOrders) {
-        pendingOrders = savedOrders;
-        // Recalculate displayed credits based on saved build orders
-        for (const order of pendingOrders.builds) {
-          if (order.cost) {
-            displayedCredits -= order.cost;
-          }
-        }
-        updateCreditsDisplay();
-        updateOrdersList();
-        updateMovementArrows();
-      }
+      await loadPendingOrders(gameId, gameState.currentTurn);
     }
 
     // Check game status and show appropriate UI
@@ -462,13 +493,14 @@ function renderPlanetManagementList() {
     const hasFort = buildings.some(b => b.type === 'fortification');
     const fort = buildings.find(b => b.type === 'fortification');
 
-    // Check queued builds
-    const miningQueued = pendingOrders.builds.some(b => b.planetId === planet.id && b.buildingType === 'mining');
-    const factoryQueued = pendingOrders.builds.some(b => b.planetId === planet.id && b.buildingType === 'factory');
-    const fortQueued = pendingOrders.builds.some(b => b.planetId === planet.id && b.buildingType === 'fortification');
+    // Check queued builds (use Number() for consistent comparison)
+    const planetIdNum = Number(planet.id);
+    const miningQueued = pendingOrders.builds.some(b => Number(b.planetId) === planetIdNum && b.buildingType === 'mining');
+    const factoryQueued = pendingOrders.builds.some(b => Number(b.planetId) === planetIdNum && b.buildingType === 'factory');
+    const fortQueued = pendingOrders.builds.some(b => Number(b.planetId) === planetIdNum && b.buildingType === 'fortification');
 
     // Check if factory is manufacturing
-    const mechQueued = pendingOrders.builds.find(b => b.planetId === planet.id && b.type === 'mech');
+    const mechQueued = pendingOrders.builds.find(b => Number(b.planetId) === planetIdNum && b.type === 'mech');
 
     // Get mechs on this planet
     const mechsOnPlanet = gameState.mechs.filter(m => m.owner_id === playerId && m.x === planet.x && m.y === planet.y);
@@ -583,15 +615,18 @@ function handlePmSort(column) {
 function toggleBuildingOrder(planetId, buildingType, isBuilt, isQueued) {
   if (isBuilt) return; // Already built, do nothing
 
+  // Ensure planetId is a number for consistent comparison
+  planetId = Number(planetId);
+
   if (isQueued) {
     // Dequeue
-    const idx = pendingOrders.builds.findIndex(b => b.planetId === planetId && b.buildingType === buildingType);
+    const idx = pendingOrders.builds.findIndex(b => Number(b.planetId) === planetId && b.buildingType === buildingType);
     if (idx !== -1) {
       const cost = COSTS.buildings[buildingType];
       displayedCredits += cost;
       pendingOrders.builds.splice(idx, 1);
       updateOrdersList();
-      updateResourcesDisplay();
+      updateCreditsDisplay();
       saveOrdersToStorage(gameState.id, gameState.currentTurn);
     }
   } else {
@@ -605,7 +640,7 @@ function toggleBuildingOrder(planetId, buildingType, isBuilt, isQueued) {
         buildingType
       });
       updateOrdersList();
-      updateResourcesDisplay();
+      updateCreditsDisplay();
       saveOrdersToStorage(gameState.id, gameState.currentTurn);
     }
   }
@@ -614,6 +649,8 @@ function toggleBuildingOrder(planetId, buildingType, isBuilt, isQueued) {
 }
 
 function handleFactoryClick(event, planetId, hasFactory, isQueued) {
+  planetId = Number(planetId);
+
   if (!hasFactory) {
     // Not built - queue/dequeue the factory
     toggleBuildingOrder(planetId, 'factory', false, isQueued);
@@ -626,10 +663,10 @@ function handleFactoryClick(event, planetId, hasFactory, isQueued) {
 
 function showMechBuildMenu(event, planetId) {
   const menu = document.getElementById('mech-build-menu');
-  pmCurrentPlanetForMech = planetId;
+  pmCurrentPlanetForMech = Number(planetId);
 
   // Check if already building a mech on this planet
-  const existingMechBuild = pendingOrders.builds.find(b => b.planetId === planetId && b.type === 'mech');
+  const existingMechBuild = pendingOrders.builds.find(b => Number(b.planetId) === pmCurrentPlanetForMech && b.type === 'mech');
 
   // Position menu near click
   const rect = event.target.getBoundingClientRect();
@@ -663,8 +700,8 @@ function closeMechBuildMenu() {
 function handleMechBuildOption(mechType) {
   if (!pmCurrentPlanetForMech) return;
 
-  const planetId = pmCurrentPlanetForMech;
-  const existingIdx = pendingOrders.builds.findIndex(b => b.planetId === planetId && b.type === 'mech');
+  const planetId = Number(pmCurrentPlanetForMech);
+  const existingIdx = pendingOrders.builds.findIndex(b => Number(b.planetId) === planetId && b.type === 'mech');
 
   if (existingIdx !== -1) {
     // Already has a mech queued - cancel it
@@ -699,7 +736,7 @@ function handleMechBuildOption(mechType) {
 
   closeMechBuildMenu();
   updateOrdersList();
-  updateResourcesDisplay();
+  updateCreditsDisplay();
   saveOrdersToStorage(gameState.id, gameState.currentTurn);
   renderPlanetManagementList();
 }
@@ -763,6 +800,341 @@ function escapeHtml(text) {
 }
 
 // ==================== END PLANET MANAGEMENT ====================
+
+// ==================== MECH MANAGEMENT ====================
+
+let mmExpandedForces = new Set(); // Track which forces are expanded
+
+function openMechManagement() {
+  const overlay = document.getElementById('mech-management-overlay');
+  overlay.style.display = 'flex';
+
+  // Set empire name and color
+  const currentPlayer = gameState.players.find(p => p.id === playerId);
+  const empireNameEl = document.getElementById('mm-empire-name');
+  if (currentPlayer) {
+    empireNameEl.textContent = currentPlayer.empire_name || 'Your Empire';
+    empireNameEl.style.color = currentPlayer.empire_color || '#4a9eff';
+  }
+
+  renderMechManagementLists();
+}
+
+function closeMechManagement() {
+  document.getElementById('mech-management-overlay').style.display = 'none';
+}
+
+function renderMechManagementLists() {
+  const forcesTbody = document.getElementById('mm-forces-list');
+  const mechsTbody = document.getElementById('mm-mechs-list');
+
+  // Get player's mechs
+  const myMechs = gameState.mechs.filter(m => m.owner_id === playerId);
+
+  // Group mechs by location to create forces
+  const forcesByLocation = {};
+  myMechs.forEach(mech => {
+    const key = `${mech.x},${mech.y}`;
+    if (!forcesByLocation[key]) {
+      forcesByLocation[key] = [];
+    }
+    forcesByLocation[key].push(mech);
+  });
+
+  // Render forces (only locations with 2+ mechs)
+  const forceEntries = Object.entries(forcesByLocation)
+    .filter(([, mechs]) => mechs.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length); // Sort by mech count descending
+
+  forcesTbody.innerHTML = forceEntries.map(([locationKey, mechs]) => {
+    const [x, y] = locationKey.split(',').map(Number);
+    return renderForceRow(x, y, mechs);
+  }).join('');
+
+  // Show message if no forces
+  if (forceEntries.length === 0) {
+    forcesTbody.innerHTML = '<tr><td colspan="8" class="mm-empty">No mech forces (need 2+ mechs at same location)</td></tr>';
+  }
+
+  // Render individual mechs (sorted by type strength)
+  const mechStrength = { assault: 4, heavy: 3, medium: 2, light: 1 };
+  const sortedMechs = [...myMechs].sort((a, b) => {
+    // Sort by type strength (descending), then by HP (descending)
+    const typeCompare = mechStrength[b.type] - mechStrength[a.type];
+    if (typeCompare !== 0) return typeCompare;
+    return b.hp - a.hp;
+  });
+
+  mechsTbody.innerHTML = sortedMechs.map(mech => renderMechRow(mech)).join('');
+
+  // Show message if no mechs
+  if (sortedMechs.length === 0) {
+    mechsTbody.innerHTML = '<tr><td colspan="7" class="mm-empty">No mechs in your empire</td></tr>';
+  }
+}
+
+function renderForceRow(x, y, mechs) {
+  const locationKey = `${x},${y}`;
+  const isExpanded = mmExpandedForces.has(locationKey);
+
+  // Find strongest mech type
+  const mechStrength = { assault: 4, heavy: 3, medium: 2, light: 1 };
+  let strongestType = 'light';
+  mechs.forEach(m => {
+    if (mechStrength[m.type] > mechStrength[strongestType]) {
+      strongestType = m.type;
+    }
+  });
+
+  // Calculate combined HP
+  const totalHp = mechs.reduce((sum, m) => sum + m.hp, 0);
+  const totalMaxHp = mechs.reduce((sum, m) => sum + m.max_hp, 0);
+
+  // Get composition breakdown
+  const counts = { light: 0, medium: 0, heavy: 0, assault: 0 };
+  mechs.forEach(m => counts[m.type]++);
+
+  // Get planet at location (if any)
+  const planet = gameState.planets.find(p => p.x === x && p.y === y);
+  const locationHtml = getLocationHtml(planet);
+
+  // Check for pending move orders for all mechs in this force
+  const forceOrders = getForceOrders(mechs);
+
+  // Composition HTML
+  let compositionHtml = '';
+  if (counts.assault > 0) compositionHtml += `<span class="mm-comp-item"><img src="/assets/Assault.png" class="mm-mech-icon-small" alt="">${counts.assault}</span>`;
+  if (counts.heavy > 0) compositionHtml += `<span class="mm-comp-item"><img src="/assets/Heavy.png" class="mm-mech-icon-small" alt="">${counts.heavy}</span>`;
+  if (counts.medium > 0) compositionHtml += `<span class="mm-comp-item"><img src="/assets/Medium.png" class="mm-mech-icon-small" alt="">${counts.medium}</span>`;
+  if (counts.light > 0) compositionHtml += `<span class="mm-comp-item"><img src="/assets/Light.png" class="mm-mech-icon-small" alt="">${counts.light}</span>`;
+
+  // Orders HTML
+  let ordersHtml = '';
+  if (forceOrders.allSameDestination) {
+    ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${forceOrders.destination.x}, ${forceOrders.destination.y})">→ (${forceOrders.destination.x}, ${forceOrders.destination.y})</span>`;
+  } else if (forceOrders.hasMixedOrders) {
+    ordersHtml = '<span class="mm-orders-mixed">Mixed orders</span>';
+  } else {
+    ordersHtml = '<span class="mm-no-orders">—</span>';
+  }
+
+  // Cancel button (only show if any mech has orders)
+  const showCancel = forceOrders.hasAnyOrders;
+
+  let html = `
+    <tr class="mm-force-row" data-location="${locationKey}">
+      <td><button class="mm-force-expand ${isExpanded ? 'expanded' : ''}" onclick="toggleForceExpand('${locationKey}')">${isExpanded ? '▼' : '▶'}</button></td>
+      <td><img src="/assets/${strongestType.charAt(0).toUpperCase() + strongestType.slice(1)}.png" class="mm-mech-icon" alt=""></td>
+      <td><span class="mm-coords" onclick="navigateToCoords(${x}, ${y})">(${x}, ${y})</span></td>
+      <td class="mm-location">${locationHtml}</td>
+      <td>${totalHp} / ${totalMaxHp}</td>
+      <td><div class="mm-composition">${compositionHtml}</div></td>
+      <td>${ordersHtml}</td>
+      <td>${showCancel ? `<button class="mm-cancel-btn" onclick="cancelForceOrders(${x}, ${y})">Cancel</button>` : ''}</td>
+    </tr>
+  `;
+
+  // Add expanded mech rows if expanded
+  if (isExpanded) {
+    const mechStrength = { assault: 4, heavy: 3, medium: 2, light: 1 };
+    const sortedMechs = [...mechs].sort((a, b) => mechStrength[b.type] - mechStrength[a.type]);
+    sortedMechs.forEach(mech => {
+      html += renderForceMechRow(mech);
+    });
+  }
+
+  return html;
+}
+
+function renderForceMechRow(mech) {
+  const moveOrder = pendingOrders.moves.find(m => m.mechId === mech.id);
+
+  // Orders HTML
+  let ordersHtml = '';
+  if (moveOrder) {
+    ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${moveOrder.toX}, ${moveOrder.toY})">→ (${moveOrder.toX}, ${moveOrder.toY})</span>`;
+  } else {
+    ordersHtml = '<span class="mm-no-orders">—</span>';
+  }
+
+  return `
+    <tr class="mm-force-mech-row">
+      <td></td>
+      <td><img src="/assets/${mech.type.charAt(0).toUpperCase() + mech.type.slice(1)}.png" class="mm-mech-icon" alt=""></td>
+      <td colspan="2" class="mm-mech-name">${escapeHtml(mech.designation || mech.type)}</td>
+      <td>${mech.hp} / ${mech.max_hp}</td>
+      <td></td>
+      <td>${ordersHtml}</td>
+      <td>${moveOrder ? `<button class="mm-cancel-btn mm-cancel-small" onclick="cancelMechOrder(${mech.id})">✕</button>` : ''}</td>
+    </tr>
+  `;
+}
+
+function renderMechRow(mech) {
+  // Get planet at location (if any)
+  const planet = gameState.planets.find(p => p.x === mech.x && p.y === mech.y);
+  const locationHtml = getLocationHtml(planet);
+
+  // Check for pending move orders
+  const moveOrder = pendingOrders.moves.find(m => m.mechId === mech.id);
+
+  // Orders HTML
+  let ordersHtml = '';
+  if (moveOrder) {
+    ordersHtml = `<span class="mm-orders" onclick="navigateToCoords(${moveOrder.toX}, ${moveOrder.toY})">→ (${moveOrder.toX}, ${moveOrder.toY})</span>`;
+  } else {
+    ordersHtml = '<span class="mm-no-orders">—</span>';
+  }
+
+  return `
+    <tr class="mm-mech-row" data-mech-id="${mech.id}">
+      <td><img src="/assets/${mech.type.charAt(0).toUpperCase() + mech.type.slice(1)}.png" class="mm-mech-icon" alt=""></td>
+      <td class="mm-mech-name">${escapeHtml(mech.designation || mech.type)}</td>
+      <td><span class="mm-coords" onclick="navigateToCoords(${mech.x}, ${mech.y})">(${mech.x}, ${mech.y})</span></td>
+      <td class="mm-location">${locationHtml}</td>
+      <td>${mech.hp} / ${mech.max_hp}</td>
+      <td>${ordersHtml}</td>
+      <td>${moveOrder ? `<button class="mm-cancel-btn" onclick="cancelMechOrder(${mech.id})">Cancel</button>` : ''}</td>
+    </tr>
+  `;
+}
+
+function getLocationHtml(planet) {
+  if (planet) {
+    const planetIcon = getPlanetIconForValue(planet.base_income || 1);
+    return `<span class="mm-location-content"><img src="${planetIcon}" class="mm-planet-icon" alt="">${escapeHtml(planet.name)}</span>`;
+  }
+  return '<span class="mm-location-space">Deep Space</span>';
+}
+
+function getForceOrders(mechs) {
+  const orders = mechs.map(m => pendingOrders.moves.find(o => o.mechId === m.id)).filter(Boolean);
+
+  if (orders.length === 0) {
+    return { hasAnyOrders: false, allSameDestination: false, hasMixedOrders: false };
+  }
+
+  // Check if all have same destination
+  const firstDest = orders[0];
+  const allSame = orders.every(o => o.toX === firstDest.toX && o.toY === firstDest.toY);
+
+  if (allSame && orders.length === mechs.length) {
+    return { hasAnyOrders: true, allSameDestination: true, destination: { x: firstDest.toX, y: firstDest.toY }, hasMixedOrders: false };
+  }
+
+  return { hasAnyOrders: true, allSameDestination: false, hasMixedOrders: orders.length > 0 };
+}
+
+function toggleForceExpand(locationKey) {
+  if (mmExpandedForces.has(locationKey)) {
+    mmExpandedForces.delete(locationKey);
+  } else {
+    mmExpandedForces.add(locationKey);
+  }
+  renderMechManagementLists();
+}
+
+function navigateToCoords(x, y) {
+  closeMechManagement();
+  gameMap.centerOnTile(x, y);
+  gameMap.selectedTile = { x, y };
+  gameMap.render();
+  updateSelectionPanel(x, y);
+}
+
+function cancelMechOrder(mechId) {
+  const idx = pendingOrders.moves.findIndex(m => m.mechId === mechId);
+  if (idx !== -1) {
+    pendingOrders.moves.splice(idx, 1);
+    updateOrdersList();
+    updateMovementArrows();
+    saveOrdersToStorage(gameState.id, gameState.currentTurn);
+    renderMechManagementLists();
+  }
+}
+
+function cancelForceOrders(x, y) {
+  // Find all mechs at this location
+  const mechsAtLocation = gameState.mechs.filter(m => m.owner_id === playerId && m.x === x && m.y === y);
+  const mechIds = new Set(mechsAtLocation.map(m => m.id));
+
+  // Remove all move orders for these mechs
+  pendingOrders.moves = pendingOrders.moves.filter(m => !mechIds.has(m.mechId));
+
+  updateOrdersList();
+  updateMovementArrows();
+  saveOrdersToStorage(gameState.id, gameState.currentTurn);
+  renderMechManagementLists();
+}
+
+// ==================== END MECH MANAGEMENT ====================
+
+// ==================== STAR EMPIRES ====================
+
+function openStarEmpires() {
+  const overlay = document.getElementById('star-empires-overlay');
+  overlay.style.display = 'flex';
+  renderStarEmpiresList();
+}
+
+function closeStarEmpires() {
+  document.getElementById('star-empires-overlay').style.display = 'none';
+}
+
+function renderStarEmpiresList() {
+  const tbody = document.getElementById('se-players-list');
+
+  // Get all players sorted by player number
+  const players = [...gameState.players].sort((a, b) => a.player_number - b.player_number);
+
+  tbody.innerHTML = players.map(player => {
+    // Use server-provided counts (includes all planets/mechs, not just visible ones)
+    const planetCount = player.planet_count || 0;
+    const mechCount = player.mech_count || 0;
+
+    // Determine status
+    let status, statusClass;
+    if (gameState.winnerId === player.id) {
+      status = 'Victor';
+      statusClass = 'se-status-victor';
+    } else if (player.is_eliminated) {
+      status = 'Defeated';
+      statusClass = 'se-status-defeated';
+    } else {
+      status = 'Active';
+      statusClass = 'se-status-active';
+    }
+
+    // Turn submit status
+    let turnStatus, turnStatusClass;
+    if (player.is_eliminated || gameState.winnerId) {
+      turnStatus = '—';
+      turnStatusClass = '';
+    } else if (player.has_submitted_turn) {
+      turnStatus = 'Turn Submitted';
+      turnStatusClass = 'se-turn-submitted';
+    } else {
+      turnStatus = 'Waiting on Submission';
+      turnStatusClass = 'se-turn-waiting';
+    }
+
+    // Empire color
+    const empireColor = player.empire_color || playerColors[(player.player_number - 1) % playerColors.length];
+    const empireName = player.empire_name || `Player ${player.player_number}`;
+
+    return `
+      <tr>
+        <td><span class="se-empire-name" style="color: ${empireColor}">${escapeHtml(empireName)}</span></td>
+        <td><span class="se-status ${statusClass}">${status}</span></td>
+        <td class="se-stat">${planetCount}</td>
+        <td class="se-stat">${mechCount}</td>
+        <td><span class="se-turn-status ${turnStatusClass}">${turnStatus}</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ==================== END STAR EMPIRES ====================
 
 function getPlayerName(playerId) {
   const player = gameState.players.find(p => p.id === playerId);
@@ -2014,9 +2386,22 @@ function setupUIHandlers() {
     }
   });
 
-  // Mech Management (to be implemented)
-  document.getElementById('btn-mech-management').addEventListener('click', () => {
-    console.log('Mech Management clicked - to be implemented');
+  // Star Empires
+  document.getElementById('btn-star-empires').addEventListener('click', openStarEmpires);
+  document.getElementById('close-star-empires').addEventListener('click', closeStarEmpires);
+  document.getElementById('star-empires-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'star-empires-overlay') {
+      closeStarEmpires();
+    }
+  });
+
+  // Mech Management
+  document.getElementById('btn-mech-management').addEventListener('click', openMechManagement);
+  document.getElementById('close-mech-management').addEventListener('click', closeMechManagement);
+  document.getElementById('mech-management-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'mech-management-overlay') {
+      closeMechManagement();
+    }
   });
 
   // Turn Summary handlers
@@ -2859,12 +3244,6 @@ function startTurnTimer(deadline) {
     if (diff <= 0) {
       timerEl.textContent = '00:00';
       turnTimerFrameId = null;
-
-      // Auto-submit pending orders if player hasn't submitted yet
-      if (!gameState.hasSubmittedTurn && gameState.status === 'active') {
-        console.log('Timer expired - auto-submitting pending orders');
-        submitTurn();
-      }
       return;
     }
 

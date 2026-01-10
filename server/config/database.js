@@ -196,6 +196,20 @@ async function initializeDatabase() {
     // Columns might already exist or table doesn't exist yet
   }
 
+  // Migration: Add pending_orders column to game_players for server-side order storage
+  try {
+    const gamePlayersInfo2 = db.exec("PRAGMA table_info(game_players)");
+    if (gamePlayersInfo2.length > 0) {
+      const columns = gamePlayersInfo2[0].values.map(row => row[1]);
+      if (!columns.includes('pending_orders')) {
+        db.run('ALTER TABLE game_players ADD COLUMN pending_orders TEXT');
+        console.log('Added pending_orders column to game_players table');
+      }
+    }
+  } catch (e) {
+    // Column might already exist or table doesn't exist yet
+  }
+
   // Turns table
   db.run(`
     CREATE TABLE IF NOT EXISTS turns (

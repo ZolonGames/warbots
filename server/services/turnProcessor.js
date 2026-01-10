@@ -105,16 +105,34 @@ function processTurn(gameId) {
     SELECT * FROM game_players WHERE game_id = ? AND is_eliminated = 0
   `).all(gameId);
 
-  // Get all turn orders for this turn
+  // Get all turn orders for this turn (submitted orders)
   const turnOrders = db.prepare(`
     SELECT * FROM turns WHERE game_id = ? AND turn_number = ?
   `).all(gameId, turnNumber);
 
-  // Parse orders by player
+  // Parse orders by player - first from submitted turns
   const ordersByPlayer = {};
   for (const turn of turnOrders) {
     ordersByPlayer[turn.player_id] = JSON.parse(turn.orders);
   }
+
+  // For players who haven't submitted, use their pending orders
+  for (const player of players) {
+    if (!ordersByPlayer[player.id] && player.pending_orders) {
+      try {
+        const pendingOrders = JSON.parse(player.pending_orders);
+        ordersByPlayer[player.id] = pendingOrders;
+        console.log(`Using pending orders for player ${player.id} (not submitted)`);
+      } catch (e) {
+        console.warn(`Failed to parse pending orders for player ${player.id}:`, e);
+      }
+    }
+  }
+
+  // Clear pending orders for all players after collecting them
+  db.prepare(`
+    UPDATE game_players SET pending_orders = NULL WHERE game_id = ?
+  `).run(gameId);
 
   // Log turn start for all players
   for (const player of players) {

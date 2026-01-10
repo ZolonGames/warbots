@@ -59,9 +59,9 @@ router.post('/games/:id/turns', (req, res) => {
       VALUES (?, ?, ?, ?)
     `).run(gameId, player.id, game.current_turn, JSON.stringify(orders));
 
-    // Mark player as having submitted
+    // Mark player as having submitted and clear pending orders
     db.prepare(`
-      UPDATE game_players SET has_submitted_turn = 1 WHERE id = ?
+      UPDATE game_players SET has_submitted_turn = 1, pending_orders = NULL WHERE id = ?
     `).run(player.id);
 
     // Check if all players have submitted
@@ -81,6 +81,70 @@ router.post('/games/:id/turns', (req, res) => {
   } catch (error) {
     console.error('Failed to submit turn:', error);
     res.status(500).json({ error: 'Failed to submit turn' });
+  }
+});
+
+// Save pending orders (server-side storage)
+router.put('/games/:id/orders', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+    const { orders } = req.body;
+
+    // Get game
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    if (game.status !== 'active') {
+      return res.status(400).json({ error: 'Game is not active' });
+    }
+
+    // Get player
+    const player = db.prepare(`
+      SELECT * FROM game_players WHERE game_id = ? AND user_id = ?
+    `).get(gameId, req.user.id);
+
+    if (!player) {
+      return res.status(403).json({ error: 'You are not in this game' });
+    }
+
+    if (player.is_eliminated) {
+      return res.status(400).json({ error: 'You have been eliminated' });
+    }
+
+    // Save pending orders to database
+    db.prepare(`
+      UPDATE game_players SET pending_orders = ? WHERE id = ?
+    `).run(JSON.stringify(orders || { moves: [], builds: [] }), player.id);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to save pending orders:', error);
+    res.status(500).json({ error: 'Failed to save pending orders' });
+  }
+});
+
+// Get pending orders
+router.get('/games/:id/orders', (req, res) => {
+  try {
+    const gameId = parseInt(req.params.id);
+
+    // Get player
+    const player = db.prepare(`
+      SELECT * FROM game_players WHERE game_id = ? AND user_id = ?
+    `).get(gameId, req.user.id);
+
+    if (!player) {
+      return res.status(403).json({ error: 'You are not in this game' });
+    }
+
+    // Return pending orders (or empty structure if none)
+    const orders = player.pending_orders ? JSON.parse(player.pending_orders) : { moves: [], builds: [] };
+    res.json(orders);
+  } catch (error) {
+    console.error('Failed to get pending orders:', error);
+    res.status(500).json({ error: 'Failed to get pending orders' });
   }
 });
 

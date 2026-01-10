@@ -2031,8 +2031,8 @@ a:hover {
 }
 
 .pm-factory-status .mech-icon {
-  width: 16px;
-  height: 16px;
+  width: 32px;
+  height: 32px;
   vertical-align: middle;
 }
 
@@ -2062,8 +2062,8 @@ a:hover {
 }
 
 .pm-mech-count img {
-  width: 18px;
-  height: 18px;
+  width: 36px;
+  height: 36px;
 }
 
 .pm-mech-count span {
@@ -2120,4 +2120,378 @@ a:hover {
 .pm-rename-input:focus {
   outline: none;
   box-shadow: 0 0 4px var(--accent-blue);
+}
+
+/* Mech Management Modal */
+.mech-management-window {
+  max-width: 1000px;
+  width: 95%;
+}
+
+.mm-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mm-empire-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mm-content {
+  overflow-y: auto;
+  max-height: 70vh;
+  padding: 16px 20px;
+}
+
+.mm-section {
+  margin-bottom: 24px;
+}
+
+.mm-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.mm-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--border-color);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.mm-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.mm-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Force row styling */
+.mm-force-row {
+  cursor: pointer;
+}
+
+.mm-force-row.expanded {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mm-force-expand {
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: transform 0.2s;
+  display: inline-block;
+  width: 20px;
+}
+
+.mm-force-row.expanded .mm-force-expand {
+  transform: rotate(90deg);
+}
+
+.mm-force-mechs {
+  display: none;
+}
+
+.mm-force-mechs.visible {
+  display: table-row-group;
+}
+
+.mm-force-mech-row {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.mm-force-mech-row td:first-child {
+  padding-left: 40px;
+}
+
+/* Mech icons */
+.mm-mech-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.mm-planet-icon {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* Coordinates - clickable */
+.mm-coords {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: monospace;
+}
+
+.mm-coords:hover {
+  color: var(--accent-blue);
+  text-decoration: underline;
+}
+
+/* Location display */
+.mm-location {
+  vertical-align: middle;
+}
+
+.mm-location-space {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.mm-location-planet {
+  color: var(--accent-cyan);
+}
+
+/* HP display */
+.mm-hp {
+  font-family: monospace;
+}
+
+.mm-hp-current {
+  font-weight: 600;
+}
+
+.mm-hp-separator {
+  color: var(--text-secondary);
+}
+
+.mm-hp-max {
+  color: var(--text-secondary);
+}
+
+/* Composition breakdown */
+.mm-composition {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mm-comp-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mm-comp-item img {
+  width: 24px;
+  height: 24px;
+}
+
+.mm-comp-item span {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Orders display */
+.mm-orders {
+  cursor: pointer;
+}
+
+.mm-orders:hover {
+  color: var(--accent-blue);
+  text-decoration: underline;
+}
+
+.mm-orders-none {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.mm-orders-move {
+  color: var(--accent-cyan);
+}
+
+/* Cancel button */
+.mm-cancel-btn {
+  background: transparent;
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.mm-cancel-btn:hover {
+  background: var(--accent-red);
+  color: white;
+}
+
+.mm-cancel-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.mm-cancel-btn:disabled:hover {
+  background: transparent;
+  color: var(--accent-red);
+}
+
+/* Mech name */
+.mm-mech-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Additional Mech Management styles */
+.mm-no-orders {
+  color: var(--text-secondary);
+}
+
+.mm-orders-mixed {
+  color: var(--accent-yellow);
+  font-style: italic;
+}
+
+.mm-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 20px !important;
+}
+
+.mm-mech-icon-small {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+}
+
+.mm-cancel-small {
+  padding: 2px 6px;
+  font-size: 10px;
+  min-width: unset;
+}
+
+.mm-location-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.mm-location-content .mm-planet-icon {
+  flex-shrink: 0;
+  margin-right: 0;
+  vertical-align: middle;
+}
+
+/* ==================== STAR EMPIRES ==================== */
+
+.star-empires-window {
+  width: 600px;
+  max-width: 95vw;
+  max-height: 80vh;
+}
+
+.se-content {
+  padding: 15px;
+  overflow-y: auto;
+  max-height: calc(80vh - 60px);
+}
+
+.se-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.se-table th {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 2px solid var(--border-color);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+/* Center the icon columns (planets and mechs) */
+.se-table th:nth-child(3),
+.se-table th:nth-child(4) {
+  text-align: center;
+}
+
+.se-table th img.stat-icon {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+  display: block;
+  margin: 0 auto;
+}
+
+.se-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.se-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.se-empire-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.se-status {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.se-status-active {
+  background: rgba(74, 255, 158, 0.15);
+  color: var(--accent-green);
+}
+
+.se-status-victor {
+  background: rgba(255, 204, 74, 0.15);
+  color: var(--accent-yellow);
+}
+
+.se-status-defeated {
+  background: rgba(255, 74, 74, 0.15);
+  color: var(--accent-red);
+}
+
+.se-stat {
+  font-weight: 500;
+  text-align: center;
+}
+
+.se-turn-status {
+  font-size: 12px;
+}
+
+.se-turn-waiting {
+  color: var(--text-secondary);
+}
+
+.se-turn-submitted {
+  color: var(--accent-green);
 }

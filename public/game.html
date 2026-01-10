@@ -14,7 +14,7 @@
     </div>
     <header class="game-header">
       <div class="game-title">
-        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v1.2.0</span></h1>
+        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v1.3.2</span></h1>
       </div>
       <div class="game-info">
         <span class="game-name" id="game-name">Loading...</span>
@@ -73,6 +73,7 @@
           <button id="btn-planet-management" class="toolbar-btn">Planet Management</button>
           <button id="btn-mech-management" class="toolbar-btn">Mech Management</button>
           <button id="btn-event-log" class="toolbar-btn">Event Log</button>
+          <button id="btn-star-empires" class="toolbar-btn">Star Empires</button>
         </div>
         <canvas id="game-map"></canvas>
         <div id="map-tooltip" class="tooltip" style="display: none;"></div>
@@ -278,6 +279,85 @@
     <div class="mech-build-option" data-mech="assault">
       <img src="/assets/Assault.png" class="mech-build-icon" alt="">
       <span>Assault (20)</span>
+    </div>
+  </div>
+
+  <!-- Star Empires Modal -->
+  <div id="star-empires-overlay" class="popout-overlay" style="display: none;">
+    <div class="popout-window star-empires-window">
+      <div class="popout-header">
+        <h3>Star Empires</h3>
+        <button id="close-star-empires" class="close-btn">&times;</button>
+      </div>
+      <div class="se-content">
+        <table class="se-table">
+          <thead>
+            <tr>
+              <th>Empire</th>
+              <th>Status</th>
+              <th><img src="/assets/Icon-Planet.png" class="stat-icon" alt="Planets"></th>
+              <th><img src="/assets/Mech.png" class="stat-icon" alt="Mechs"></th>
+              <th>Turn Status</th>
+            </tr>
+          </thead>
+          <tbody id="se-players-list">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mech Management Modal -->
+  <div id="mech-management-overlay" class="popout-overlay" style="display: none;">
+    <div class="popout-window mech-management-window">
+      <div class="popout-header">
+        <div class="mm-header-content">
+          <h3>Mech Management</h3>
+          <div id="mm-empire-name" class="mm-empire-subtitle"></div>
+        </div>
+        <button id="close-mech-management" class="close-btn">&times;</button>
+      </div>
+      <div class="mm-content">
+        <!-- Mech Forces Section -->
+        <div class="mm-section">
+          <h4 class="mm-section-title">Mech Forces</h4>
+          <table class="mm-table mm-forces-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Icon</th>
+                <th>Coords</th>
+                <th>Location</th>
+                <th>HP</th>
+                <th>Composition</th>
+                <th>Orders</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mm-forces-list">
+            </tbody>
+          </table>
+        </div>
+        <!-- Individual Mechs Section -->
+        <div class="mm-section">
+          <h4 class="mm-section-title">All Mechs</h4>
+          <table class="mm-table mm-mechs-table">
+            <thead>
+              <tr>
+                <th>Icon</th>
+                <th>Name</th>
+                <th>Coords</th>
+                <th>Location</th>
+                <th>HP</th>
+                <th>Orders</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mm-mechs-list">
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
