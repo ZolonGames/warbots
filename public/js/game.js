@@ -2629,6 +2629,9 @@ function addMoveOrder(mechId, toX, toY) {
   // Remove any existing move order for this mech
   pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== mechId);
 
+  // Also clear any waypoint - a direct move order overrides waypoints
+  pendingOrders.waypoints = pendingOrders.waypoints.filter(w => w.mechId !== mechId);
+
   // Find the mech to get its current position
   const mech = gameState.mechs.find(m => m.id === mechId);
   const fromX = mech ? mech.x : 0;
