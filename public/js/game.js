@@ -2059,12 +2059,9 @@ function handleTileHover(tile, event) {
   const planet = gameState.planets.find(p => p.x === tile.x && p.y === tile.y);
   const mechs = gameState.mechs.filter(m => m.x === tile.x && m.y === tile.y);
 
-  if (!planet && mechs.length === 0) {
-    tooltip.style.display = 'none';
-    return;
-  }
+  // Always show coordinates
+  let html = `<span class="tooltip-coords">(${tile.x}, ${tile.y})</span><br>`;
 
-  let html = '';
   if (planet) {
     const planetName = planet.name || (planet.is_homeworld ? 'Homeworld' : 'Planet');
     html += `<strong>${planetName}</strong><br>`;
@@ -2087,6 +2084,9 @@ function handleTileHover(tile, event) {
       ).join(' ');
       html += iconHtml;
     }
+  } else if (mechs.length === 0) {
+    // No planet and no mechs - show empty space
+    html += `<span style="color: #888;">Empty Space</span>`;
   }
 
   if (mechs.length > 0) {
@@ -3808,9 +3808,9 @@ function handleMechDragStart(e, mech, tile) {
   e.dataTransfer.setData('text/plain', JSON.stringify({ mechId: mech.id, fromX: tile.x, fromY: tile.y }));
   e.dataTransfer.effectAllowed = 'move';
 
-  // Calculate valid moves (adjacent tiles)
-  const validMoves = getValidMoves(tile.x, tile.y);
-  gameMap.setDragState(true, [mech], validMoves);
+  // All tiles are valid for waypoints
+  const validMoves = getValidWaypointMoves(tile.x, tile.y);
+  gameMap.setDragState(true, [mech], validMoves, tile);
 
   // Add class to dragged item
   e.target.classList.add('dragging');
@@ -3884,6 +3884,21 @@ function setupMapDropZone() {
   mapContainer.addEventListener('dragover', (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+
+    // Update hovered tile on map for preview arrow
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left - gameMap.panX) / gameMap.tileSize;
+    const y = (e.clientY - rect.top - gameMap.panY) / gameMap.tileSize;
+    const tileX = Math.floor(x);
+    const tileY = Math.floor(y);
+
+    // Update map's hovered tile for preview rendering
+    if (tileX >= 0 && tileX < gameState.gridSize && tileY >= 0 && tileY < gameState.gridSize) {
+      if (!gameMap.hoveredTile || gameMap.hoveredTile.x !== tileX || gameMap.hoveredTile.y !== tileY) {
+        gameMap.hoveredTile = { x: tileX, y: tileY };
+        gameMap.render();
+      }
+    }
   });
 
   mapContainer.addEventListener('drop', (e) => {

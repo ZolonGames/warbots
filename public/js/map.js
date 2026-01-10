@@ -912,48 +912,125 @@ class GameMap {
     this.render();
   }
 
-  // Draw move highlights during drag
+  // Draw move highlights and preview arrow during drag
   drawMoveHighlights() {
-    if (!this.isDraggingMech || !this.validMoves) return;
+    if (!this.isDraggingMech || !this.dragSourceTile) return;
 
     const ctx = this.ctx;
     const tileSize = this.tileSize;
 
-    // Calculate visible range
-    const startX = Math.max(0, Math.floor(-this.panX / tileSize));
-    const startY = Math.max(0, Math.floor(-this.panY / tileSize));
-    const endX = Math.min(this.gridSize, Math.ceil((this.canvas.width - this.panX) / tileSize));
-    const endY = Math.min(this.gridSize, Math.ceil((this.canvas.height - this.panY) / tileSize));
-
-    for (let x = startX; x < endX; x++) {
-      for (let y = startY; y < endY; y++) {
-        const key = `${x},${y}`;
-        const px = this.panX + x * tileSize;
-        const py = this.panY + y * tileSize;
-
-        if (this.validMoves.has(key)) {
-          // Check if this is an adjacent move (1 turn) or waypoint (multi-turn)
-          const isAdjacent = this.dragSourceTile &&
-            Math.max(Math.abs(x - this.dragSourceTile.x), Math.abs(y - this.dragSourceTile.y)) === 1;
-
-          if (isAdjacent) {
-            // Adjacent move - bright blue
-            ctx.fillStyle = 'rgba(74, 158, 255, 0.4)';
-            ctx.fillRect(px, py, tileSize, tileSize);
-            ctx.strokeStyle = 'rgba(74, 158, 255, 0.9)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
-          } else {
-            // Waypoint destination - yellow/orange tint
-            ctx.fillStyle = 'rgba(255, 200, 74, 0.2)';
-            ctx.fillRect(px, py, tileSize, tileSize);
-            ctx.strokeStyle = 'rgba(255, 200, 74, 0.5)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
-          }
-        }
-      }
+    // Only draw if we have a hovered tile that's different from source
+    if (!this.hoveredTile ||
+        (this.hoveredTile.x === this.dragSourceTile.x && this.hoveredTile.y === this.dragSourceTile.y)) {
+      return;
     }
+
+    const destX = this.hoveredTile.x;
+    const destY = this.hoveredTile.y;
+
+    // Check if destination is in bounds
+    if (destX < 0 || destX >= this.gridSize || destY < 0 || destY >= this.gridSize) {
+      return;
+    }
+
+    // Calculate turns to destination (Chebyshev distance)
+    const turns = Math.max(
+      Math.abs(destX - this.dragSourceTile.x),
+      Math.abs(destY - this.dragSourceTile.y)
+    );
+
+    // Get mech color (use first dragged mech's owner color)
+    let color = '#4a9eff';
+    if (this.dragMechs && this.dragMechs.length > 0) {
+      color = this.getOwnerColor(this.dragMechs[0].owner_id);
+    }
+
+    // Calculate center positions
+    const fromX = this.panX + this.dragSourceTile.x * tileSize + tileSize / 2;
+    const fromY = this.panY + this.dragSourceTile.y * tileSize + tileSize / 2;
+    const toX = this.panX + destX * tileSize + tileSize / 2;
+    const toY = this.panY + destY * tileSize + tileSize / 2;
+
+    // Draw arrow line (dashed for multi-turn, solid for 1 turn)
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(3, tileSize * 0.12);
+    ctx.lineCap = 'round';
+
+    if (turns > 1) {
+      ctx.setLineDash([tileSize * 0.2, tileSize * 0.1]);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+
+    ctx.setLineDash([]); // Reset dash
+
+    // Draw arrowhead at destination
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    const arrowSize = Math.max(10, tileSize * 0.35);
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(
+      toX - arrowSize * Math.cos(angle - Math.PI / 6),
+      toY - arrowSize * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+      toX - arrowSize * Math.cos(angle + Math.PI / 6),
+      toY - arrowSize * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    // Draw turn count label
+    const turnText = turns === 1 ? '1 turn' : `${turns} turns`;
+
+    // Position label at midpoint of the line
+    const midX = (fromX + toX) / 2;
+    const midY = (fromY + toY) / 2;
+
+    // Draw background for text
+    const fontSize = Math.max(12, tileSize * 0.5);
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    const textMetrics = ctx.measureText(turnText);
+    const padding = 6;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(
+      midX - textMetrics.width / 2 - padding,
+      midY - fontSize / 2 - padding,
+      textMetrics.width + padding * 2,
+      fontSize + padding * 2
+    );
+
+    // Draw text
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(turnText, midX, midY);
+
+    // Draw destination highlight
+    const px = this.panX + destX * tileSize;
+    const py = this.panY + destY * tileSize;
+
+    if (turns === 1) {
+      // Adjacent - blue highlight
+      ctx.fillStyle = 'rgba(74, 158, 255, 0.4)';
+      ctx.strokeStyle = 'rgba(74, 158, 255, 0.9)';
+    } else {
+      // Waypoint - yellow highlight
+      ctx.fillStyle = 'rgba(255, 200, 74, 0.4)';
+      ctx.strokeStyle = 'rgba(255, 200, 74, 0.9)';
+    }
+
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
   }
 
   // Get mechs at a specific tile (for selection)
