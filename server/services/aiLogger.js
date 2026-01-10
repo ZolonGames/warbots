@@ -116,6 +116,12 @@ function logAnalysis(empireName, analysis) {
   log(`    - Under Threat: ${analysis.underThreat ? 'YES' : 'No'}`);
   log(`    - Preferred Mech Type: ${analysis.preferredMechType}`);
   log(`    - Can Attack Fortified: ${analysis.canAttackFortified ? 'Yes' : 'No'}`);
+  if (analysis.isDominating) {
+    log(`    - DOMINATING: Aggressive mode enabled`);
+  }
+  if (analysis.hasWeakEnemy) {
+    log(`    - WEAK ENEMY DETECTED: Finishing blow mode - ${analysis.weakEnemies.length} weak enemies`);
+  }
   if (analysis.needsToReclaimHomeworld) {
     log(`    - HOMEWORLD LOST: Needs reclaim`);
     log(`    - Reclaim Ready: ${analysis.canReclaimHomeworldNow ? 'YES - attacking' : 'No - building forces'}`);

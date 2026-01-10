@@ -102,9 +102,10 @@ class GameMap {
   }
 
   resize() {
-    const container = this.canvas.parentElement;
-    this.canvas.width = container.clientWidth;
-    this.canvas.height = container.clientHeight;
+    // Use the canvas's own computed dimensions (after CSS flex layout)
+    const rect = this.canvas.getBoundingClientRect();
+    this.canvas.width = rect.width;
+    this.canvas.height = rect.height;
 
     // Calculate base tile size to fit grid initially
     const maxTileWidth = this.canvas.width / this.gridSize;
@@ -121,6 +122,18 @@ class GameMap {
     const gridHeight = this.gridSize * this.baseTileSize * this.scale;
     this.panX = (this.canvas.width - gridWidth) / 2;
     this.panY = (this.canvas.height - gridHeight) / 2;
+  }
+
+  centerOnTile(x, y) {
+    // Center the canvas view on a specific tile
+    const tileSize = this.tileSize;
+    const tileCenterX = (x + 0.5) * tileSize;
+    const tileCenterY = (y + 0.5) * tileSize;
+    const canvasCenterX = this.canvas.width / 2;
+    const canvasCenterY = this.canvas.height / 2;
+    this.panX = canvasCenterX - tileCenterX;
+    this.panY = canvasCenterY - tileCenterY;
+    this.render();
   }
 
   get tileSize() {

@@ -269,12 +269,10 @@ function toggleIncomeBreakdown() {
 }
 
 function updateEventLog() {
-  const logContainer = document.getElementById('log-entries');
   const popoutContainer = document.getElementById('popout-log-entries');
 
   if (!gameState.combatLogs || gameState.combatLogs.length === 0) {
     const emptyHtml = '<div class="log-entry log-empty">No events yet</div>';
-    logContainer.innerHTML = emptyHtml;
     if (popoutContainer) popoutContainer.innerHTML = emptyHtml;
     return;
   }
@@ -377,7 +375,6 @@ function updateEventLog() {
     html = '<div class="log-entry log-empty">No events yet</div>';
   }
 
-  logContainer.innerHTML = html;
   // Only update popout if not currently revealing events
   if (popoutContainer && !isRevealingEvents) {
     popoutContainer.innerHTML = html;
@@ -388,14 +385,384 @@ function updateEventLog() {
 function openEventLogPopout() {
   const popout = document.getElementById('log-popout');
   popout.style.display = 'flex';
-  // Sync content
-  const logContent = document.getElementById('log-entries').innerHTML;
-  document.getElementById('popout-log-entries').innerHTML = logContent;
+  // Ensure latest content is displayed
+  updateEventLog();
 }
 
 function closeEventLogPopout() {
   document.getElementById('log-popout').style.display = 'none';
 }
+
+// ==================== PLANET MANAGEMENT ====================
+
+let pmSortColumn = 'name';
+let pmSortDirection = 'asc';
+let pmCurrentPlanetForMech = null;
+
+function openPlanetManagement() {
+  const overlay = document.getElementById('planet-management-overlay');
+  overlay.style.display = 'flex';
+
+  // Set empire name and color
+  const currentPlayer = gameState.players.find(p => p.id === playerId);
+  const empireNameEl = document.getElementById('pm-empire-name');
+  if (currentPlayer) {
+    empireNameEl.textContent = currentPlayer.empire_name || 'Your Empire';
+    empireNameEl.style.color = currentPlayer.empire_color || '#4a9eff';
+  }
+
+  renderPlanetManagementList();
+}
+
+function closePlanetManagement() {
+  document.getElementById('planet-management-overlay').style.display = 'none';
+  closeMechBuildMenu();
+}
+
+function renderPlanetManagementList() {
+  const tbody = document.getElementById('pm-planet-list');
+
+  // Get owned planets
+  const ownedPlanets = gameState.planets.filter(p => p.owner_id === playerId);
+
+  // Sort planets
+  const sortedPlanets = [...ownedPlanets].sort((a, b) => {
+    let valA, valB;
+
+    switch (pmSortColumn) {
+      case 'name':
+        valA = a.name.toLowerCase();
+        valB = b.name.toLowerCase();
+        break;
+      case 'value':
+        valA = a.base_income || 1;
+        valB = b.base_income || 1;
+        break;
+      case 'coords':
+        valA = a.x * 1000 + a.y;
+        valB = b.x * 1000 + b.y;
+        break;
+      default:
+        return 0;
+    }
+
+    if (valA < valB) return pmSortDirection === 'asc' ? -1 : 1;
+    if (valA > valB) return pmSortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  // Build HTML
+  tbody.innerHTML = sortedPlanets.map(planet => {
+    const planetIcon = getPlanetIconForValue(planet.base_income || 1);
+
+    // Check buildings
+    const buildings = planet.buildings || [];
+    const hasMining = buildings.some(b => b.type === 'mining');
+    const hasFactory = buildings.some(b => b.type === 'factory');
+    const hasFort = buildings.some(b => b.type === 'fortification');
+    const fort = buildings.find(b => b.type === 'fortification');
+
+    // Check queued builds
+    const miningQueued = pendingOrders.builds.some(b => b.planetId === planet.id && b.buildingType === 'mining');
+    const factoryQueued = pendingOrders.builds.some(b => b.planetId === planet.id && b.buildingType === 'factory');
+    const fortQueued = pendingOrders.builds.some(b => b.planetId === planet.id && b.buildingType === 'fortification');
+
+    // Check if factory is manufacturing
+    const mechQueued = pendingOrders.builds.find(b => b.planetId === planet.id && b.type === 'mech');
+
+    // Get mechs on this planet
+    const mechsOnPlanet = gameState.mechs.filter(m => m.owner_id === playerId && m.x === planet.x && m.y === planet.y);
+    const mechCounts = { light: 0, medium: 0, heavy: 0, assault: 0 };
+    mechsOnPlanet.forEach(m => mechCounts[m.type]++);
+
+    // Build mining icon
+    let miningClass = 'pm-building-icon';
+    if (hasMining) miningClass += ' built';
+    else if (miningQueued) miningClass += ' queued';
+    else miningClass += ' dimmed';
+
+    // Build factory icon
+    let factoryClass = 'pm-building-icon';
+    if (hasFactory) factoryClass += ' built clickable';
+    else if (factoryQueued) factoryClass += ' queued';
+    else factoryClass += ' dimmed';
+
+    // Build fort icon
+    let fortClass = 'pm-building-icon';
+    if (hasFort) fortClass += ' built';
+    else if (fortQueued) fortClass += ' queued';
+    else fortClass += ' dimmed';
+
+    // Factory status text
+    let factoryStatusHtml = '';
+    if (hasFactory) {
+      if (mechQueued) {
+        const mechIcon = getMechIconPath(mechQueued.mechType);
+        factoryStatusHtml = `<span class="pm-factory-status">Building <img src="${mechIcon}" class="mech-icon" alt=""></span>`;
+      } else {
+        factoryStatusHtml = '<span class="pm-factory-status idle">Idle</span>';
+      }
+    }
+
+    // Fort HP display
+    let fortHpHtml = '';
+    if (hasFort && fort) {
+      const hpPercent = fort.hp / fort.max_hp;
+      const hpClass = hpPercent > 0.6 ? 'hp-high' : hpPercent > 0.3 ? 'hp-medium' : 'hp-low';
+      fortHpHtml = `<span class="pm-defenses-hp ${hpClass}">${fort.hp}/${fort.max_hp}</span>`;
+    }
+
+    // Mech counts display
+    let mechsHtml = '';
+    if (mechCounts.light > 0) mechsHtml += `<div class="pm-mech-count"><img src="/assets/Light.png" alt=""><span>${mechCounts.light}</span></div>`;
+    if (mechCounts.medium > 0) mechsHtml += `<div class="pm-mech-count"><img src="/assets/Medium.png" alt=""><span>${mechCounts.medium}</span></div>`;
+    if (mechCounts.heavy > 0) mechsHtml += `<div class="pm-mech-count"><img src="/assets/Heavy.png" alt=""><span>${mechCounts.heavy}</span></div>`;
+    if (mechCounts.assault > 0) mechsHtml += `<div class="pm-mech-count"><img src="/assets/Assault.png" alt=""><span>${mechCounts.assault}</span></div>`;
+    if (!mechsHtml) mechsHtml = '<span style="color: var(--text-secondary)">—</span>';
+
+    return `
+      <tr data-planet-id="${planet.id}">
+        <td><img src="${planetIcon}" class="pm-planet-icon" alt=""></td>
+        <td><span class="pm-planet-name" onclick="startRenamePlanet(${planet.id}, '${escapeHtml(planet.name)}')">${escapeHtml(planet.name)}</span></td>
+        <td><span class="pm-coords" onclick="navigateToPlanet(${planet.x}, ${planet.y})">(${planet.x}, ${planet.y})</span></td>
+        <td><span class="pm-value">${planet.base_income || 1}</span></td>
+        <td>
+          <img src="/assets/Mining Colony.png" class="${miningClass}"
+               onclick="toggleBuildingOrder(${planet.id}, 'mining', ${hasMining}, ${miningQueued})" alt="">
+        </td>
+        <td>
+          <div class="pm-factory-cell">
+            <img src="/assets/Factory.png" class="${factoryClass}"
+                 onclick="handleFactoryClick(event, ${planet.id}, ${hasFactory}, ${factoryQueued})" alt="">
+            ${factoryStatusHtml}
+          </div>
+        </td>
+        <td>
+          <div class="pm-defenses-cell">
+            <img src="/assets/Defenses.png" class="${fortClass}"
+                 onclick="toggleBuildingOrder(${planet.id}, 'fortification', ${hasFort}, ${fortQueued})" alt="">
+            ${fortHpHtml}
+          </div>
+        </td>
+        <td><div class="pm-mechs-cell">${mechsHtml}</div></td>
+      </tr>
+    `;
+  }).join('');
+
+  // Update sort header indicators
+  document.querySelectorAll('.pm-sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sort === pmSortColumn) {
+      th.classList.add(pmSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+}
+
+function getPlanetIconForValue(value) {
+  if (value >= 5) return '/assets/Planet-5.png';
+  if (value >= 3) return '/assets/Planet-3.png';
+  if (value >= 2) return '/assets/Planet-2.png';
+  return '/assets/Planet-1.png';
+}
+
+function getMechIconPath(mechType) {
+  const icons = { light: 'Light.png', medium: 'Medium.png', heavy: 'Heavy.png', assault: 'Assault.png' };
+  return `/assets/${icons[mechType] || 'Mech.png'}`;
+}
+
+function handlePmSort(column) {
+  if (pmSortColumn === column) {
+    pmSortDirection = pmSortDirection === 'asc' ? 'desc' : 'asc';
+  } else {
+    pmSortColumn = column;
+    pmSortDirection = 'asc';
+  }
+  renderPlanetManagementList();
+}
+
+function toggleBuildingOrder(planetId, buildingType, isBuilt, isQueued) {
+  if (isBuilt) return; // Already built, do nothing
+
+  if (isQueued) {
+    // Dequeue
+    const idx = pendingOrders.builds.findIndex(b => b.planetId === planetId && b.buildingType === buildingType);
+    if (idx !== -1) {
+      const cost = COSTS.buildings[buildingType];
+      displayedCredits += cost;
+      pendingOrders.builds.splice(idx, 1);
+      updateOrdersList();
+      updateResourcesDisplay();
+      saveOrdersToStorage(gameState.id, gameState.currentTurn);
+    }
+  } else {
+    // Queue the build
+    const cost = COSTS.buildings[buildingType];
+    if (displayedCredits >= cost) {
+      displayedCredits -= cost;
+      pendingOrders.builds.push({
+        planetId,
+        type: 'building',
+        buildingType
+      });
+      updateOrdersList();
+      updateResourcesDisplay();
+      saveOrdersToStorage(gameState.id, gameState.currentTurn);
+    }
+  }
+
+  renderPlanetManagementList();
+}
+
+function handleFactoryClick(event, planetId, hasFactory, isQueued) {
+  if (!hasFactory) {
+    // Not built - queue/dequeue the factory
+    toggleBuildingOrder(planetId, 'factory', false, isQueued);
+    return;
+  }
+
+  // Factory is built - show mech build menu
+  showMechBuildMenu(event, planetId);
+}
+
+function showMechBuildMenu(event, planetId) {
+  const menu = document.getElementById('mech-build-menu');
+  pmCurrentPlanetForMech = planetId;
+
+  // Check if already building a mech on this planet
+  const existingMechBuild = pendingOrders.builds.find(b => b.planetId === planetId && b.type === 'mech');
+
+  // Position menu near click
+  const rect = event.target.getBoundingClientRect();
+  menu.style.left = `${rect.right + 10}px`;
+  menu.style.top = `${rect.top}px`;
+  menu.style.display = 'block';
+
+  // Update option states
+  menu.querySelectorAll('.mech-build-option').forEach(option => {
+    const mechType = option.dataset.mech;
+    const cost = COSTS.mechs[mechType];
+    const canAfford = displayedCredits >= cost;
+    const isQueued = existingMechBuild && existingMechBuild.mechType === mechType;
+
+    option.classList.toggle('disabled', !canAfford && !isQueued);
+    option.classList.toggle('queued', isQueued);
+
+    if (isQueued) {
+      option.querySelector('span').textContent = `${mechType.charAt(0).toUpperCase() + mechType.slice(1)} (Cancel)`;
+    } else {
+      option.querySelector('span').textContent = `${mechType.charAt(0).toUpperCase() + mechType.slice(1)} (${cost})`;
+    }
+  });
+}
+
+function closeMechBuildMenu() {
+  document.getElementById('mech-build-menu').style.display = 'none';
+  pmCurrentPlanetForMech = null;
+}
+
+function handleMechBuildOption(mechType) {
+  if (!pmCurrentPlanetForMech) return;
+
+  const planetId = pmCurrentPlanetForMech;
+  const existingIdx = pendingOrders.builds.findIndex(b => b.planetId === planetId && b.type === 'mech');
+
+  if (existingIdx !== -1) {
+    // Already has a mech queued - cancel it
+    const existing = pendingOrders.builds[existingIdx];
+    displayedCredits += COSTS.mechs[existing.mechType];
+    pendingOrders.builds.splice(existingIdx, 1);
+
+    // If clicking the same type, just cancel. If different, queue the new one.
+    if (existing.mechType !== mechType) {
+      const cost = COSTS.mechs[mechType];
+      if (displayedCredits >= cost) {
+        displayedCredits -= cost;
+        pendingOrders.builds.push({
+          planetId,
+          type: 'mech',
+          mechType
+        });
+      }
+    }
+  } else {
+    // No mech queued - add one
+    const cost = COSTS.mechs[mechType];
+    if (displayedCredits >= cost) {
+      displayedCredits -= cost;
+      pendingOrders.builds.push({
+        planetId,
+        type: 'mech',
+        mechType
+      });
+    }
+  }
+
+  closeMechBuildMenu();
+  updateOrdersList();
+  updateResourcesDisplay();
+  saveOrdersToStorage(gameState.id, gameState.currentTurn);
+  renderPlanetManagementList();
+}
+
+function navigateToPlanet(x, y) {
+  closePlanetManagement();
+  gameMap.centerOnTile(x, y);
+  // Also select this tile
+  gameMap.selectedTile = { x, y };
+  gameMap.render();
+  updateSelectionPanel(x, y);
+}
+
+function startRenamePlanet(planetId, currentName) {
+  const row = document.querySelector(`tr[data-planet-id="${planetId}"]`);
+  const nameCell = row.querySelector('.pm-planet-name');
+
+  // Replace with input
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'pm-rename-input';
+  input.value = currentName;
+  input.maxLength = 30;
+
+  nameCell.replaceWith(input);
+  input.focus();
+  input.select();
+
+  // Handle save
+  const save = async () => {
+    const newName = input.value.trim();
+    if (newName && newName !== currentName) {
+      try {
+        await api.renamePlanet(planetId, newName);
+        // Update local state
+        const planet = gameState.planets.find(p => p.id === planetId);
+        if (planet) planet.name = newName;
+      } catch (err) {
+        console.error('Failed to rename planet:', err);
+      }
+    }
+    renderPlanetManagementList();
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      input.value = currentName;
+      input.blur();
+    }
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ==================== END PLANET MANAGEMENT ====================
 
 function getPlayerName(playerId) {
   const player = gameState.players.find(p => p.id === playerId);
@@ -1605,8 +1972,8 @@ function setupUIHandlers() {
   document.getElementById('zoom-out').addEventListener('click', () => gameMap.zoomOut());
   document.getElementById('reset-view').addEventListener('click', () => gameMap.resetView());
 
-  // Event log pop-out
-  document.getElementById('popout-log').addEventListener('click', openEventLogPopout);
+  // Toolbar buttons
+  document.getElementById('btn-event-log').addEventListener('click', openEventLogPopout);
   document.getElementById('close-popout').addEventListener('click', closeEventLogPopout);
 
   // Close popout when clicking overlay background
@@ -1614,6 +1981,42 @@ function setupUIHandlers() {
     if (e.target.id === 'log-popout') {
       closeEventLogPopout();
     }
+  });
+
+  // Management panel handlers
+  document.getElementById('btn-planet-management').addEventListener('click', openPlanetManagement);
+  document.getElementById('close-planet-management').addEventListener('click', closePlanetManagement);
+  document.getElementById('planet-management-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'planet-management-overlay') {
+      closePlanetManagement();
+    }
+  });
+
+  // Planet management sort headers
+  document.querySelectorAll('.pm-sortable').forEach(th => {
+    th.addEventListener('click', () => handlePmSort(th.dataset.sort));
+  });
+
+  // Mech build menu options
+  document.querySelectorAll('.mech-build-option').forEach(option => {
+    option.addEventListener('click', () => {
+      if (!option.classList.contains('disabled')) {
+        handleMechBuildOption(option.dataset.mech);
+      }
+    });
+  });
+
+  // Close mech build menu when clicking outside
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('mech-build-menu');
+    if (menu.style.display === 'block' && !menu.contains(e.target) && !e.target.classList.contains('pm-building-icon')) {
+      closeMechBuildMenu();
+    }
+  });
+
+  // Mech Management (to be implemented)
+  document.getElementById('btn-mech-management').addEventListener('click', () => {
+    console.log('Mech Management clicked - to be implemented');
   });
 
   // Turn Summary handlers

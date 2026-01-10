@@ -264,6 +264,20 @@ function analyzeGameState(gameState, aiPlayer) {
   const totalMechStrength = ownedMechs.length;
   const combatMechs = ownedMechs.filter(m => m.type !== 'light');
 
+  // Check if we're dominating - have significantly more planets/mechs than visible enemies
+  // This is used to trigger more aggressive behavior
+  const isDominating = planetCount >= 8 && visibleEnemyCount > 0 && planetCount >= visibleEnemyCount * 2;
+
+  // Check if any enemy is weak (1-3 visible planets) - these should be finished off
+  const enemyPlanetsByOwner = {};
+  for (const planet of visibleEnemyPlanets) {
+    enemyPlanetsByOwner[planet.owner_id] = (enemyPlanetsByOwner[planet.owner_id] || 0) + 1;
+  }
+  const weakEnemies = Object.entries(enemyPlanetsByOwner)
+    .filter(([ownerId, count]) => count <= 3)
+    .map(([ownerId]) => parseInt(ownerId));
+  const hasWeakEnemy = weakEnemies.length > 0;
+
   // Homeworld reclaim priority
   let needsToReclaimHomeworld = false;
   let canReclaimHomeworldNow = false;
@@ -303,7 +317,10 @@ function analyzeGameState(gameState, aiPlayer) {
     canAttackFortified: combatMechs.length >= 4,
     lostHomeworld,
     needsToReclaimHomeworld,
-    canReclaimHomeworldNow
+    canReclaimHomeworldNow,
+    isDominating,
+    hasWeakEnemy,
+    weakEnemies
   };
 }
 
@@ -582,15 +599,144 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
     }
   }
 
-  // Priority 1: ATTACK enemy planets with grouped forces of 4-8 mechs
-  // Groups of 4+ at the same tile will attack, but cap attack groups at 8
-  const MIN_ATTACK_GROUP = 4;
+  // FINISHING BLOW: If enemy has only 1-2 planets visible, send ALL available mechs to attack
+  // This ensures we don't let weak enemies survive indefinitely
+  if (analysis.hasWeakEnemy && visibleEnemyPlanets.length > 0) {
+    // Find planets belonging to weak enemies (1-3 planets)
+    const weakEnemyPlanets = visibleEnemyPlanets.filter(p =>
+      analysis.weakEnemies.includes(p.owner_id)
+    );
+
+    if (weakEnemyPlanets.length > 0 && weakEnemyPlanets.length <= 2) {
+      // Very weak enemy - send everyone to finish them off!
+      // Sort by unfortified first
+      weakEnemyPlanets.sort((a, b) => {
+        const aHasFort = a.buildings && a.buildings.some(b => b.type === 'fortification');
+        const bHasFort = b.buildings && b.buildings.some(b => b.type === 'fortification');
+        if (aHasFort !== bHasFort) return aHasFort ? 1 : -1;
+        return 0;
+      });
+
+      const targetPlanet = weakEnemyPlanets[0];
+
+      // Send ALL unassigned mechs to attack this target
+      for (const mech of ownedMechs) {
+        if (assignedMechs.has(mech.id)) continue;
+
+        // Skip mechs that are the sole garrison of a fortified planet (keep 1 defender)
+        const isOnFortifiedPlanet = defendedPlanets.some(dp =>
+          mech.x === dp.planet.x && mech.y === dp.planet.y
+        );
+        if (isOnFortifiedPlanet) {
+          const dp = defendedPlanets.find(d => mech.x === d.planet.x && mech.y === d.planet.y);
+          const mechsHere = dp.mechs.filter(m => !assignedMechs.has(m.id));
+          if (mechsHere.length <= 1) continue; // Keep at least 1 garrison
+        }
+
+        const move = moveToward(mech.x, mech.y, targetPlanet.x, targetPlanet.y, gridSize);
+        if (move) {
+          moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
+          assignedMechs.add(mech.id);
+        }
+      }
+    }
+  }
+
+  // SCOUTING/RAIDING: Categorize enemy planets by defense level and send appropriate forces
+  // - Undefended (no mechs, no fort): send 1 light mech to capture
+  // - Fortified only (no mechs, has fort): send 3-4 mechs
+  // - Defended (has mechs): use normal attack rules
+  if (visibleEnemyPlanets.length > 0) {
+    // Check each enemy planet for defenders
+    for (const enemyPlanet of visibleEnemyPlanets) {
+      const hasFort = enemyPlanet.buildings && enemyPlanet.buildings.some(b => b.type === 'fortification');
+      const enemyMechsOnPlanet = visibleEnemyMechs.filter(m =>
+        m.x === enemyPlanet.x && m.y === enemyPlanet.y
+      );
+      const hasMechDefenders = enemyMechsOnPlanet.length > 0;
+
+      if (!hasMechDefenders && !hasFort) {
+        // UNDEFENDED: Send 1 light mech to capture (or any mech if no light available)
+        let scoutMech = null;
+        let bestDist = Infinity;
+
+        for (const mech of ownedMechs) {
+          if (assignedMechs.has(mech.id)) continue;
+
+          const dist = Math.sqrt(
+            (mech.x - enemyPlanet.x) ** 2 + (mech.y - enemyPlanet.y) ** 2
+          );
+
+          // Strongly prefer light mechs (halve their effective distance)
+          const effectiveDist = mech.type === 'light' ? dist * 0.3 : dist;
+
+          if (effectiveDist < bestDist) {
+            bestDist = effectiveDist;
+            scoutMech = mech;
+          }
+        }
+
+        if (scoutMech) {
+          const move = moveToward(scoutMech.x, scoutMech.y, enemyPlanet.x, enemyPlanet.y, gridSize);
+          if (move) {
+            moves.push({ mechId: scoutMech.id, toX: move.x, toY: move.y });
+            assignedMechs.add(scoutMech.id);
+          }
+        }
+      } else if (!hasMechDefenders && hasFort) {
+        // FORTIFIED BUT UNGARRISONED: Send 3-4 mechs to overwhelm the fortification
+        const FORT_RAID_MIN = 3;
+        const FORT_RAID_MAX = 4;
+
+        // Find nearby unassigned mechs
+        const nearbyMechs = ownedMechs
+          .filter(m => !assignedMechs.has(m.id))
+          .map(m => ({
+            mech: m,
+            dist: Math.sqrt((m.x - enemyPlanet.x) ** 2 + (m.y - enemyPlanet.y) ** 2)
+          }))
+          .sort((a, b) => a.dist - b.dist);
+
+        // Only proceed if we have enough mechs available
+        if (nearbyMechs.length >= FORT_RAID_MIN) {
+          const raidGroup = nearbyMechs.slice(0, FORT_RAID_MAX);
+
+          for (const { mech } of raidGroup) {
+            const move = moveToward(mech.x, mech.y, enemyPlanet.x, enemyPlanet.y, gridSize);
+            if (move) {
+              moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
+              assignedMechs.add(mech.id);
+            }
+          }
+        }
+      }
+      // Planets with mech defenders will be handled by normal attack logic below
+    }
+  }
+
+  // Priority 1: ATTACK enemy planets with grouped forces (for mech-defended planets)
+  // When dominating or facing weak enemies, be more aggressive (smaller groups attack)
+  const MIN_ATTACK_GROUP = (analysis.isDominating || analysis.hasWeakEnemy) ? 2 : 4;
   const MAX_ATTACK_GROUP = 8;
   const IDEAL_ATTACK_GROUP = 4;
 
   if (visibleEnemyPlanets.length > 0) {
-    // Sort enemy planets by priority (unfortified first, then closest)
-    const sortedEnemyPlanets = [...visibleEnemyPlanets].sort((a, b) => {
+    // Filter to only mech-defended planets (undefended/fort-only handled above)
+    const mechDefendedPlanets = visibleEnemyPlanets.filter(p => {
+      const enemyMechsOnPlanet = visibleEnemyMechs.filter(m => m.x === p.x && m.y === p.y);
+      return enemyMechsOnPlanet.length > 0;
+    });
+
+    // Sort enemy planets by priority:
+    // 1. Weak enemy planets first (finish them off!)
+    // 2. Unfortified planets
+    // 3. Closest planets
+    const sortedEnemyPlanets = [...mechDefendedPlanets].sort((a, b) => {
+      // Prioritize weak enemy planets
+      const aIsWeakEnemy = analysis.weakEnemies.includes(a.owner_id);
+      const bIsWeakEnemy = analysis.weakEnemies.includes(b.owner_id);
+      if (aIsWeakEnemy !== bIsWeakEnemy) return aIsWeakEnemy ? -1 : 1;
+
       const aHasFort = a.buildings && a.buildings.some(b => b.type === 'fortification');
       const bHasFort = b.buildings && b.buildings.some(b => b.type === 'fortification');
       if (aHasFort !== bHasFort) return aHasFort ? 1 : -1;

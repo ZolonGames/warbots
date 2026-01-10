@@ -14,7 +14,7 @@
     </div>
     <header class="game-header">
       <div class="game-title">
-        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v1.0.1</span></h1>
+        <h1><a href="/lobby.html">WARBOTS</a> <span class="version-tag">v1.2.0</span></h1>
       </div>
       <div class="game-info">
         <span class="game-name" id="game-name">Loading...</span>
@@ -69,6 +69,11 @@
       </aside>
 
       <section class="map-container">
+        <div class="map-toolbar">
+          <button id="btn-planet-management" class="toolbar-btn">Planet Management</button>
+          <button id="btn-mech-management" class="toolbar-btn">Mech Management</button>
+          <button id="btn-event-log" class="toolbar-btn">Event Log</button>
+        </div>
         <canvas id="game-map"></canvas>
         <div id="map-tooltip" class="tooltip" style="display: none;"></div>
         <div class="map-controls">
@@ -193,15 +198,6 @@
       </aside>
     </main>
 
-    <footer class="game-footer">
-      <div id="event-log">
-        <div class="log-header">
-          <h4>Event Log</h4>
-          <button id="popout-log" class="popout-btn" title="Pop out to new window">&#8599;</button>
-        </div>
-        <div id="log-entries"></div>
-      </div>
-    </footer>
   </div>
 
   <!-- Turn Summary Window (auto-popup at turn start) -->
@@ -231,6 +227,57 @@
         <button id="close-popout" class="close-btn">&times;</button>
       </div>
       <div id="popout-log-entries" class="popout-content"></div>
+    </div>
+  </div>
+
+  <!-- Planet Management Modal -->
+  <div id="planet-management-overlay" class="popout-overlay" style="display: none;">
+    <div class="popout-window planet-management-window">
+      <div class="popout-header">
+        <div class="pm-header-content">
+          <h3>Planet Management</h3>
+          <div id="pm-empire-name" class="pm-empire-subtitle"></div>
+        </div>
+        <button id="close-planet-management" class="close-btn">&times;</button>
+      </div>
+      <div class="pm-table-container">
+        <table class="pm-table">
+          <thead>
+            <tr>
+              <th class="pm-sortable" data-sort="value">Icon</th>
+              <th class="pm-sortable" data-sort="name">Planet Name</th>
+              <th class="pm-sortable" data-sort="coords">Coords</th>
+              <th>Value</th>
+              <th>Mining</th>
+              <th>Factory</th>
+              <th>Defenses</th>
+              <th>Mechs</th>
+            </tr>
+          </thead>
+          <tbody id="pm-planet-list">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mech Build Menu (for Factory click) -->
+  <div id="mech-build-menu" class="mech-build-dropdown" style="display: none;">
+    <div class="mech-build-option" data-mech="light">
+      <img src="/assets/Light.png" class="mech-build-icon" alt="">
+      <span>Light (2)</span>
+    </div>
+    <div class="mech-build-option" data-mech="medium">
+      <img src="/assets/Medium.png" class="mech-build-icon" alt="">
+      <span>Medium (5)</span>
+    </div>
+    <div class="mech-build-option" data-mech="heavy">
+      <img src="/assets/Heavy.png" class="mech-build-icon" alt="">
+      <span>Heavy (12)</span>
+    </div>
+    <div class="mech-build-option" data-mech="assault">
+      <img src="/assets/Assault.png" class="mech-build-icon" alt="">
+      <span>Assault (20)</span>
     </div>
   </div>
 

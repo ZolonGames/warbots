@@ -796,12 +796,53 @@ a:hover {
   position: relative;
   background: var(--bg-dark);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Map toolbar */
+.map-toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-medium);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.toolbar-btn {
+  padding: 8px 20px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+  border-color: var(--accent-blue);
+  background: var(--bg-dark);
+}
+
+.toolbar-btn:active {
+  transform: scale(0.98);
+}
+
+.toolbar-btn.active {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue);
+  color: white;
 }
 
 #game-map {
   display: block;
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Map controls */
@@ -1832,4 +1873,251 @@ a:hover {
 .game-status-badge.finished {
   background: var(--text-secondary);
   color: var(--bg-dark);
+}
+
+/* Planet Management Modal */
+.planet-management-window {
+  max-width: 900px;
+  width: 95%;
+}
+
+.pm-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pm-empire-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pm-table-container {
+  overflow-y: auto;
+  max-height: 60vh;
+  padding: 16px 20px;
+}
+
+.pm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.pm-table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border-color);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.pm-table th.pm-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.pm-table th.pm-sortable:hover {
+  color: var(--accent-blue);
+}
+
+.pm-table th.pm-sortable::after {
+  content: ' ⇅';
+  opacity: 0.5;
+}
+
+.pm-table th.pm-sortable.sort-asc::after {
+  content: ' ↑';
+  opacity: 1;
+}
+
+.pm-table th.pm-sortable.sort-desc::after {
+  content: ' ↓';
+  opacity: 1;
+}
+
+.pm-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.pm-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pm-planet-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.pm-planet-name {
+  color: var(--accent-cyan);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pm-planet-name:hover {
+  text-decoration: underline;
+}
+
+.pm-coords {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: monospace;
+}
+
+.pm-coords:hover {
+  color: var(--accent-blue);
+  text-decoration: underline;
+}
+
+.pm-value {
+  color: var(--accent-yellow);
+  font-weight: 600;
+}
+
+.pm-building-icon {
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 4px;
+}
+
+.pm-building-icon:hover {
+  transform: scale(1.1);
+}
+
+.pm-building-icon.dimmed {
+  opacity: 0.3;
+  filter: grayscale(100%);
+}
+
+.pm-building-icon.dimmed:hover {
+  opacity: 0.5;
+}
+
+.pm-building-icon.queued {
+  filter: brightness(1.2) sepia(1) hue-rotate(180deg) saturate(3);
+  box-shadow: 0 0 8px var(--accent-blue);
+}
+
+.pm-building-icon.built {
+  cursor: default;
+}
+
+.pm-building-icon.built.clickable {
+  cursor: pointer;
+}
+
+.pm-factory-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-factory-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.pm-factory-status.idle {
+  font-style: italic;
+}
+
+.pm-factory-status .mech-icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+}
+
+.pm-defenses-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-defenses-hp {
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.pm-mechs-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pm-mech-count {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.pm-mech-count img {
+  width: 18px;
+  height: 18px;
+}
+
+.pm-mech-count span {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Mech Build Dropdown */
+.mech-build-dropdown {
+  position: fixed;
+  background: var(--bg-medium);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 0;
+  z-index: 2000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  min-width: 140px;
+}
+
+.mech-build-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.mech-build-option:hover {
+  background: var(--bg-light);
+}
+
+.mech-build-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mech-build-option .mech-build-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* Planet rename input */
+.pm-rename-input {
+  background: var(--bg-dark);
+  border: 1px solid var(--accent-blue);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-size: 14px;
+  width: 150px;
+}
+
+.pm-rename-input:focus {
+  outline: none;
+  box-shadow: 0 0 4px var(--accent-blue);
 }
