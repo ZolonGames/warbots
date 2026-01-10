@@ -5,7 +5,8 @@ let gameState = null;
 let playerId = null;
 let pendingOrders = {
   moves: [],
-  builds: []
+  builds: [],
+  waypoints: [] // Long-distance movement targets: { mechId, targetX, targetY, fromX, fromY }
 };
 
 // Drag state
@@ -59,6 +60,10 @@ function loadOrdersFromStorage(gameId, turnNumber) {
     try {
       const parsed = JSON.parse(saved);
       if (parsed.moves && parsed.builds) {
+        // Ensure waypoints array exists
+        if (!parsed.waypoints) {
+          parsed.waypoints = [];
+        }
         return parsed;
       }
     } catch (e) {
@@ -79,7 +84,11 @@ async function loadPendingOrders(gameId, turnNumber) {
   // Try to load from server first
   try {
     const serverOrders = await api.getPendingOrders(gameId);
-    if (serverOrders && (serverOrders.moves?.length > 0 || serverOrders.builds?.length > 0)) {
+    if (serverOrders && (serverOrders.moves?.length > 0 || serverOrders.builds?.length > 0 || serverOrders.waypoints?.length > 0)) {
+      // Ensure waypoints array exists
+      if (!serverOrders.waypoints) {
+        serverOrders.waypoints = [];
+      }
       savedOrders = serverOrders;
       console.log('Loaded orders from server');
     }
@@ -99,6 +108,10 @@ async function loadPendingOrders(gameId, turnNumber) {
 
   if (savedOrders) {
     pendingOrders = savedOrders;
+    // Ensure waypoints array exists
+    if (!pendingOrders.waypoints) {
+      pendingOrders.waypoints = [];
+    }
     // Recalculate displayed credits based on saved build orders
     for (const order of pendingOrders.builds) {
       if (order.cost) {
@@ -2499,14 +2512,124 @@ function addMoveOrder(mechId, toX, toY) {
   saveOrdersToStorage(gameId, gameState.currentTurn);
 }
 
+// Add a waypoint for long-distance movement
+function addWaypoint(mechId, targetX, targetY) {
+  // Remove any existing waypoint for this mech
+  pendingOrders.waypoints = pendingOrders.waypoints.filter(w => w.mechId !== mechId);
+
+  // Find the mech to get its current position
+  const mech = gameState.mechs.find(m => m.id === mechId);
+  if (!mech) return;
+
+  const fromX = mech.x;
+  const fromY = mech.y;
+
+  // Add the waypoint
+  pendingOrders.waypoints.push({ mechId, targetX, targetY, fromX, fromY });
+
+  // Auto-generate the first move order toward the waypoint
+  generateMoveFromWaypoint(mechId);
+
+  updateOrdersList();
+  refreshMechsPanel();
+  updateMovementArrows();
+
+  // Save orders to localStorage for persistence
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  saveOrdersToStorage(gameId, gameState.currentTurn);
+}
+
+// Generate a move order toward a waypoint
+function generateMoveFromWaypoint(mechId) {
+  const waypoint = pendingOrders.waypoints.find(w => w.mechId === mechId);
+  if (!waypoint) return;
+
+  const mech = gameState.mechs.find(m => m.id === mechId);
+  if (!mech) return;
+
+  // Calculate next step toward the waypoint
+  const nextMove = getNextStepToward(mech.x, mech.y, waypoint.targetX, waypoint.targetY);
+
+  if (nextMove) {
+    // Remove any existing move order for this mech
+    pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== mechId);
+    pendingOrders.moves.push({
+      mechId,
+      toX: nextMove.x,
+      toY: nextMove.y,
+      fromX: mech.x,
+      fromY: mech.y
+    });
+  }
+}
+
+// Get the next step toward a target (1 tile in the right direction)
+function getNextStepToward(fromX, fromY, targetX, targetY) {
+  const dx = targetX - fromX;
+  const dy = targetY - fromY;
+
+  // Already at destination
+  if (dx === 0 && dy === 0) return null;
+
+  // Move 1 step in the direction of the target
+  const stepX = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+  const stepY = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+
+  return { x: fromX + stepX, y: fromY + stepY };
+}
+
+// Cancel a waypoint
+function cancelWaypoint(mechId) {
+  pendingOrders.waypoints = pendingOrders.waypoints.filter(w => w.mechId !== mechId);
+
+  // Also cancel any move order that was generated from this waypoint
+  pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== mechId);
+
+  updateOrdersList();
+  refreshMechsPanel();
+  updateMovementArrows();
+
+  const gameId = new URLSearchParams(window.location.search).get('id');
+  saveOrdersToStorage(gameId, gameState.currentTurn);
+}
+
+// Regenerate all move orders from waypoints (called after turn refresh)
+function regenerateWaypointMoves() {
+  for (const waypoint of pendingOrders.waypoints) {
+    const mech = gameState.mechs.find(m => m.id === waypoint.mechId);
+    if (!mech) {
+      // Mech no longer exists, remove waypoint
+      pendingOrders.waypoints = pendingOrders.waypoints.filter(w => w.mechId !== waypoint.mechId);
+      continue;
+    }
+
+    // Check if mech has reached the waypoint
+    if (mech.x === waypoint.targetX && mech.y === waypoint.targetY) {
+      // Reached destination, remove waypoint
+      pendingOrders.waypoints = pendingOrders.waypoints.filter(w => w.mechId !== waypoint.mechId);
+      continue;
+    }
+
+    // Update the waypoint's fromX/fromY to current position
+    waypoint.fromX = mech.x;
+    waypoint.fromY = mech.y;
+
+    // Generate next move toward waypoint
+    generateMoveFromWaypoint(waypoint.mechId);
+  }
+}
+
 function updateMovementArrows() {
   if (gameMap) {
-    gameMap.setMovementOrders(pendingOrders.moves);
+    gameMap.setMovementOrders(pendingOrders.moves, pendingOrders.waypoints);
   }
 }
 
 function cancelMoveOrder(mechId) {
   pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== mechId);
+  // Also cancel any waypoint for this mech
+  pendingOrders.waypoints = pendingOrders.waypoints.filter(w => w.mechId !== mechId);
+
   updateOrdersList();
   refreshMechsPanel();
   updateMovementArrows();
@@ -2529,15 +2652,33 @@ function refreshMechsPanel() {
 function updateOrdersList() {
   const container = document.getElementById('orders-list');
 
-  if (pendingOrders.moves.length === 0 && pendingOrders.builds.length === 0) {
+  const waypointCount = pendingOrders.waypoints?.length || 0;
+  if (pendingOrders.moves.length === 0 && pendingOrders.builds.length === 0 && waypointCount === 0) {
     container.innerHTML = '<p class="empty">No orders queued</p>';
     return;
   }
 
   let html = '';
 
+  // Show waypoints first (with their auto-generated moves)
+  for (let i = 0; i < waypointCount; i++) {
+    const waypoint = pendingOrders.waypoints[i];
+    const orderText = formatWaypointOrder(waypoint);
+    html += `
+      <div class="order-item order-waypoint">
+        <span>${orderText}</span>
+        <button class="order-remove" onclick="removeOrder('waypoints', ${i})">×</button>
+      </div>
+    `;
+  }
+
+  // Show regular move orders (excluding those generated by waypoints)
   for (let i = 0; i < pendingOrders.moves.length; i++) {
     const order = pendingOrders.moves[i];
+    // Skip if this move is part of a waypoint
+    const hasWaypoint = pendingOrders.waypoints?.some(w => w.mechId === order.mechId);
+    if (hasWaypoint) continue;
+
     const orderText = formatMoveOrder(order);
     html += `
       <div class="order-item">
@@ -2559,6 +2700,29 @@ function updateOrdersList() {
   }
 
   container.innerHTML = html;
+}
+
+// Format a waypoint order with mech name, destination, and turn count
+function formatWaypointOrder(waypoint) {
+  const mech = gameState.mechs.find(m => m.id === waypoint.mechId);
+  const mechName = mech ? (mech.designation || mech.type) : 'Mech';
+
+  // Calculate turns remaining
+  const fromX = mech ? mech.x : waypoint.fromX;
+  const fromY = mech ? mech.y : waypoint.fromY;
+  const turns = Math.max(Math.abs(waypoint.targetX - fromX), Math.abs(waypoint.targetY - fromY));
+  const turnText = turns === 1 ? '1 turn' : `${turns} turns`;
+
+  // Check for planet at destination
+  const toPlanet = gameState.planets.find(p => p.x === waypoint.targetX && p.y === waypoint.targetY);
+  let toText;
+  if (toPlanet && toPlanet.name) {
+    toText = `${toPlanet.name} (${waypoint.targetX}, ${waypoint.targetY})`;
+  } else {
+    toText = `(${waypoint.targetX}, ${waypoint.targetY})`;
+  }
+
+  return `${mechName} en route to ${toText} (${turnText})`;
 }
 
 // Format a move order with mech name and location details
@@ -2616,6 +2780,12 @@ function removeOrder(type, index) {
     }
   }
 
+  // If removing a waypoint, also remove the associated move order
+  if (type === 'waypoints' && pendingOrders.waypoints[index]) {
+    const waypoint = pendingOrders.waypoints[index];
+    pendingOrders.moves = pendingOrders.moves.filter(m => m.mechId !== waypoint.mechId);
+  }
+
   // Remove order first, then update displays so button states reflect the removal
   pendingOrders[type].splice(index, 1);
 
@@ -2626,8 +2796,8 @@ function removeOrder(type, index) {
 
   updateOrdersList();
 
-  // Refresh mechs panel and arrows if a move order was removed
-  if (type === 'moves') {
+  // Refresh mechs panel and arrows if a move or waypoint order was removed
+  if (type === 'moves' || type === 'waypoints') {
     refreshMechsPanel();
     updateMovementArrows();
   }
@@ -2646,7 +2816,7 @@ function clearOrders() {
   }
   updateCreditsDisplay();
 
-  pendingOrders = { moves: [], builds: [] };
+  pendingOrders = { moves: [], builds: [], waypoints: [] };
   updateOrdersList();
   refreshMechsPanel();
   updateMovementArrows();
@@ -3393,10 +3563,18 @@ async function refreshGameState(gameId) {
     if (turnChanged) {
       // Clear orders from previous turn's storage
       clearOrdersFromStorage(gameId, previousTurn);
-      // Reset pending orders
-      pendingOrders = { moves: [], builds: [] };
+      // Reset pending orders but keep waypoints for continued movement
+      const preservedWaypoints = pendingOrders.waypoints || [];
+      pendingOrders = { moves: [], builds: [], waypoints: preservedWaypoints };
+
+      // Regenerate move orders from waypoints for the new turn
+      regenerateWaypointMoves();
+
       updateOrdersList();
       updateMovementArrows();
+
+      // Save updated waypoints to storage
+      saveOrdersToStorage(gameId, gameState.currentTurn);
     }
 
     if (turnChanged || gameJustEnded) {
@@ -3675,6 +3853,29 @@ function getValidMoves(fromX, fromY) {
   return moves;
 }
 
+// Get all valid waypoint destinations (any tile in bounds)
+function getValidWaypointMoves(fromX, fromY) {
+  const moves = [];
+
+  // All tiles are valid waypoint destinations
+  for (let x = 0; x < gameState.gridSize; x++) {
+    for (let y = 0; y < gameState.gridSize; y++) {
+      if (x !== fromX || y !== fromY) {
+        moves.push({ x, y });
+      }
+    }
+  }
+
+  return moves;
+}
+
+// Calculate turns needed to reach a destination (Chebyshev distance for diagonal movement)
+function calculateTurnsToDestination(fromX, fromY, toX, toY) {
+  const dx = Math.abs(toX - fromX);
+  const dy = Math.abs(toY - fromY);
+  return Math.max(dx, dy); // Chebyshev distance - diagonal moves count as 1
+}
+
 // Set up map drop zone
 function setupMapDropZone() {
   const mapContainer = document.querySelector('.map-container');
@@ -3698,12 +3899,25 @@ function setupMapDropZone() {
       const toX = Math.floor(x);
       const toY = Math.floor(y);
 
-      // Check if valid move
-      const validMoves = getValidMoves(data.fromX, data.fromY);
-      const isValid = validMoves.some(m => m.x === toX && m.y === toY);
+      // Check bounds
+      if (toX < 0 || toX >= gameState.gridSize || toY < 0 || toY >= gameState.gridSize) {
+        return;
+      }
 
-      if (isValid) {
+      // Skip if dropping on same tile
+      if (toX === data.fromX && toY === data.fromY) {
+        return;
+      }
+
+      // Check if it's an adjacent move (1 turn) or a waypoint (multi-turn)
+      const turns = calculateTurnsToDestination(data.fromX, data.fromY, toX, toY);
+
+      if (turns === 1) {
+        // Direct move order
         addMoveOrder(data.mechId, toX, toY);
+      } else {
+        // Set waypoint for multi-turn movement
+        addWaypoint(data.mechId, toX, toY);
       }
     } catch (err) {
       console.error('Drop error:', err);
@@ -3716,20 +3930,33 @@ function setupMapDropZone() {
 
 // Map mech drag handlers (called by map.js)
 function handleMapMechDragStart(tile, mechs) {
-  // Calculate valid moves and show highlights
-  const validMoves = getValidMoves(tile.x, tile.y);
-  gameMap.setDragState(true, mechs, validMoves);
+  // All tiles are valid for waypoints - show adjacent as immediate moves
+  const validMoves = getValidWaypointMoves(tile.x, tile.y);
+  gameMap.setDragState(true, mechs, validMoves, tile);
 }
 
 function handleMapMechDragEnd(fromTile, toTile, mechs) {
-  // Check if valid move
-  const validMoves = getValidMoves(fromTile.x, fromTile.y);
-  const isValid = validMoves.some(m => m.x === toTile.x && m.y === toTile.y);
+  // Skip if dropping on same tile
+  if (toTile.x === fromTile.x && toTile.y === fromTile.y) {
+    return;
+  }
 
-  if (isValid && (toTile.x !== fromTile.x || toTile.y !== fromTile.y)) {
-    // Move all mechs in the group
-    for (const mech of mechs) {
+  // Check bounds
+  if (toTile.x < 0 || toTile.x >= gameState.gridSize || toTile.y < 0 || toTile.y >= gameState.gridSize) {
+    return;
+  }
+
+  // Calculate turns to destination
+  const turns = calculateTurnsToDestination(fromTile.x, fromTile.y, toTile.x, toTile.y);
+
+  // Move all mechs in the group
+  for (const mech of mechs) {
+    if (turns === 1) {
+      // Direct move order for adjacent tiles
       addMoveOrder(mech.id, toTile.x, toTile.y);
+    } else {
+      // Waypoint for distant tiles
+      addWaypoint(mech.id, toTile.x, toTile.y);
     }
   }
 }

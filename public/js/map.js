@@ -45,6 +45,8 @@ class GameMap {
     this.hoveredTile = null;
     this.playerId = null; // Set by game.js to identify player's mechs
     this.movementOrders = []; // Movement orders to draw arrows for
+    this.waypoints = []; // Long-distance waypoints to draw
+    this.dragSourceTile = null; // Source tile during drag for turn calculation
 
     // Event handlers
     this.onTileClick = null;
@@ -474,58 +476,146 @@ class GameMap {
   }
 
   // Set movement orders to display arrows
-  setMovementOrders(orders) {
+  setMovementOrders(orders, waypoints = []) {
     this.movementOrders = orders || [];
+    this.waypoints = waypoints || [];
     this.render();
   }
 
   // Draw arrows for pending movement orders
   drawMovementArrows() {
-    if (!this.movementOrders || this.movementOrders.length === 0) return;
-
     const ctx = this.ctx;
     const tileSize = this.tileSize;
 
-    for (const order of this.movementOrders) {
-      // Find the mech to get its owner color
-      const mech = this.mechs.find(m => m.id === order.mechId);
-      if (!mech) continue;
+    // Draw waypoint arrows first (underneath regular move arrows)
+    if (this.waypoints && this.waypoints.length > 0) {
+      for (const waypoint of this.waypoints) {
+        // Find the mech to get its owner color
+        const mech = this.mechs.find(m => m.id === waypoint.mechId);
+        if (!mech) continue;
 
-      const color = this.getOwnerColor(mech.owner_id);
+        const color = this.getOwnerColor(mech.owner_id);
 
-      // Calculate center positions
-      const fromX = this.panX + order.fromX * tileSize + tileSize / 2;
-      const fromY = this.panY + order.fromY * tileSize + tileSize / 2;
-      const toX = this.panX + order.toX * tileSize + tileSize / 2;
-      const toY = this.panY + order.toY * tileSize + tileSize / 2;
+        // Calculate center positions - from mech's current position to waypoint target
+        const fromX = this.panX + mech.x * tileSize + tileSize / 2;
+        const fromY = this.panY + mech.y * tileSize + tileSize / 2;
+        const toX = this.panX + waypoint.targetX * tileSize + tileSize / 2;
+        const toY = this.panY + waypoint.targetY * tileSize + tileSize / 2;
 
-      // Draw arrow line
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(2, tileSize * 0.1);
-      ctx.lineCap = 'round';
+        // Draw dashed line for waypoint path
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, tileSize * 0.08);
+        ctx.lineCap = 'round';
+        ctx.setLineDash([tileSize * 0.2, tileSize * 0.1]);
 
-      ctx.beginPath();
-      ctx.moveTo(fromX, fromY);
-      ctx.lineTo(toX, toY);
-      ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
 
-      // Draw arrowhead
-      const angle = Math.atan2(toY - fromY, toX - fromX);
-      const arrowSize = Math.max(8, tileSize * 0.3);
+        ctx.setLineDash([]); // Reset dash
 
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(toX, toY);
-      ctx.lineTo(
-        toX - arrowSize * Math.cos(angle - Math.PI / 6),
-        toY - arrowSize * Math.sin(angle - Math.PI / 6)
-      );
-      ctx.lineTo(
-        toX - arrowSize * Math.cos(angle + Math.PI / 6),
-        toY - arrowSize * Math.sin(angle + Math.PI / 6)
-      );
-      ctx.closePath();
-      ctx.fill();
+        // Draw arrowhead at destination
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+        const arrowSize = Math.max(8, tileSize * 0.3);
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(
+          toX - arrowSize * Math.cos(angle - Math.PI / 6),
+          toY - arrowSize * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          toX - arrowSize * Math.cos(angle + Math.PI / 6),
+          toY - arrowSize * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Draw turn count label
+        const turns = Math.max(
+          Math.abs(waypoint.targetX - mech.x),
+          Math.abs(waypoint.targetY - mech.y)
+        );
+        const turnText = turns === 1 ? '1 turn' : `${turns} turns`;
+
+        // Position label at midpoint of the line
+        const midX = (fromX + toX) / 2;
+        const midY = (fromY + toY) / 2;
+
+        // Draw background for text
+        const fontSize = Math.max(10, tileSize * 0.4);
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        const textMetrics = ctx.measureText(turnText);
+        const padding = 4;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(
+          midX - textMetrics.width / 2 - padding,
+          midY - fontSize / 2 - padding,
+          textMetrics.width + padding * 2,
+          fontSize + padding * 2
+        );
+
+        // Draw text
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(turnText, midX, midY);
+
+        // Draw target marker (circle at destination)
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(toX, toY, tileSize * 0.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // Draw regular movement order arrows (solid, on top)
+    if (this.movementOrders && this.movementOrders.length > 0) {
+      for (const order of this.movementOrders) {
+        // Find the mech to get its owner color
+        const mech = this.mechs.find(m => m.id === order.mechId);
+        if (!mech) continue;
+
+        const color = this.getOwnerColor(mech.owner_id);
+
+        // Calculate center positions
+        const fromX = this.panX + order.fromX * tileSize + tileSize / 2;
+        const fromY = this.panY + order.fromY * tileSize + tileSize / 2;
+        const toX = this.panX + order.toX * tileSize + tileSize / 2;
+        const toY = this.panY + order.toY * tileSize + tileSize / 2;
+
+        // Draw arrow line
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, tileSize * 0.1);
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
+
+        // Draw arrowhead
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+        const arrowSize = Math.max(8, tileSize * 0.3);
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(
+          toX - arrowSize * Math.cos(angle - Math.PI / 6),
+          toY - arrowSize * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          toX - arrowSize * Math.cos(angle + Math.PI / 6),
+          toY - arrowSize * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
 
@@ -814,10 +904,11 @@ class GameMap {
   }
 
   // Drag and drop state
-  setDragState(isDragging, dragMechs = null, validMoves = null) {
+  setDragState(isDragging, dragMechs = null, validMoves = null, sourceTile = null) {
     this.isDraggingMech = isDragging;
     this.dragMechs = dragMechs;
     this.validMoves = validMoves ? new Set(validMoves.map(m => `${m.x},${m.y}`)) : null;
+    this.dragSourceTile = sourceTile;
     this.render();
   }
 
@@ -841,16 +932,25 @@ class GameMap {
         const py = this.panY + y * tileSize;
 
         if (this.validMoves.has(key)) {
-          // Valid move - light blue
-          ctx.fillStyle = 'rgba(74, 158, 255, 0.3)';
-          ctx.fillRect(px, py, tileSize, tileSize);
-          ctx.strokeStyle = 'rgba(74, 158, 255, 0.8)';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
-        } else if (this.visibleTiles.has(key)) {
-          // Invalid move - light red (only on visible tiles)
-          ctx.fillStyle = 'rgba(255, 74, 74, 0.2)';
-          ctx.fillRect(px, py, tileSize, tileSize);
+          // Check if this is an adjacent move (1 turn) or waypoint (multi-turn)
+          const isAdjacent = this.dragSourceTile &&
+            Math.max(Math.abs(x - this.dragSourceTile.x), Math.abs(y - this.dragSourceTile.y)) === 1;
+
+          if (isAdjacent) {
+            // Adjacent move - bright blue
+            ctx.fillStyle = 'rgba(74, 158, 255, 0.4)';
+            ctx.fillRect(px, py, tileSize, tileSize);
+            ctx.strokeStyle = 'rgba(74, 158, 255, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
+          } else {
+            // Waypoint destination - yellow/orange tint
+            ctx.fillStyle = 'rgba(255, 200, 74, 0.2)';
+            ctx.fillRect(px, py, tileSize, tileSize);
+            ctx.strokeStyle = 'rgba(255, 200, 74, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
+          }
         }
       }
     }

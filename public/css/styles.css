@@ -1593,6 +1593,12 @@ a:hover {
   font-size: 16px;
 }
 
+/* Waypoint orders have a distinct style */
+#orders-list .order-waypoint {
+  background: linear-gradient(135deg, var(--bg-light), rgba(255, 200, 74, 0.1));
+  border-left: 3px solid var(--accent-yellow);
+}
+
 /* Mechs panel */
 .mechs-panel {
   margin-top: 16px;

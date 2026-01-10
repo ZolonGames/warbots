@@ -33,8 +33,8 @@ function generateMap(gameId, gridSize, players) {
 
   // Constants
   const MIN_HOMEWORLD_DISTANCE = 10;
-  const MIN_PLANET_DISTANCE = 3;
-  const PLANET_DENSITY = 0.10; // 10% of tiles are planets
+  const MIN_PLANET_DISTANCE = 4.5; // Planets must be 4-5 squares apart
+  const PLANET_DENSITY = 0.10; // 10% of tiles are planets (fewer will place due to spacing)
 
   // Calculate target number of planets (excluding homeworlds)
   const totalTiles = gridSize * gridSize;

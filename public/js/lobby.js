@@ -359,6 +359,20 @@ function escapeHtml(text) {
 // Patch Notes Data
 const PATCH_NOTES = [
   {
+    version: '1.4.0',
+    title: 'Waypoint Navigation',
+    changes: [
+      'Drag mechs beyond adjacent tiles to set waypoint destinations',
+      'Mechs automatically move toward waypoints at 1 tile per turn',
+      'Dashed arrows show path to waypoint with turn count labels',
+      'Waypoints persist across turns until destination is reached',
+      'Adjacent tiles highlighted in blue, distant tiles in yellow during drag',
+      'Orders panel shows waypoint routes with remaining turn count',
+      'Increased planet spacing to 4-5 tiles apart for more strategic map',
+      'Added 500 unique planet names loaded from JSON'
+    ]
+  },
+  {
     version: '1.3.8',
     changes: [
       'Added Patch Notes modal - click version number to view',
@@ -471,8 +485,8 @@ function closePatchNotes() {
 }
 
 function renderPatchNotes() {
-  // Show latest 5 versions
-  const notesToShow = PATCH_NOTES.slice(0, 5);
+  // Show latest 10 versions
+  const notesToShow = PATCH_NOTES.slice(0, 10);
 
   return notesToShow.map(note => {
     const [major, minor, patch] = note.version.split('.').map(Number);
