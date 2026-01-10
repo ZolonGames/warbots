@@ -355,3 +355,154 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+// Patch Notes Data
+const PATCH_NOTES = [
+  {
+    version: '1.3.8',
+    changes: [
+      'Added Patch Notes modal - click version number to view',
+      'Major versions display with gold headings and titles',
+      'Minor versions display with blue headings',
+      'Hotfixes display with smaller grey headings'
+    ]
+  },
+  {
+    version: '1.3.7',
+    changes: [
+      'Fixed observer mode UI - submit button no longer reappears on turn refresh',
+      'Hidden Planet Management and Mech Management buttons in observer mode',
+      'Star Empires list now updates on turn refresh when modal is open'
+    ]
+  },
+  {
+    version: '1.3.6',
+    changes: [
+      'Fixed lobby player counts to exclude Pirates faction',
+      'Active games now show "X/Y Players Remaining" format',
+      'Added remaining_players count for active games'
+    ]
+  },
+  {
+    version: '1.3.5',
+    changes: [
+      'Fixed Retire feature - Pirates now properly excluded from turn submissions',
+      'Pirates no longer appear in Star Empires list or observer panel',
+      'Fixed confirmRetire calling non-existent function'
+    ]
+  },
+  {
+    version: '1.3.4',
+    changes: [
+      'Added Retire button to surrender your empire to Pirates',
+      'Pirates faction created - dark grey neutral faction that takes over retired empires',
+      'Retired players enter observer mode to watch the rest of the game'
+    ]
+  },
+  {
+    version: '1.3.3',
+    changes: [
+      'Improved AI exploration - AI now actively scouts the map',
+      'AI claims neutral planets with light mechs',
+      'AI builds scout mechs when low on explorers',
+      'Added AI log culling to keep only 10,000 most recent lines'
+    ]
+  },
+  {
+    version: '1.3.2',
+    changes: [
+      'Server-side order storage implemented',
+      'Orders now persist across page refreshes',
+      'Fixed various order synchronization issues'
+    ]
+  },
+  {
+    version: '1.3.0',
+    title: 'Star Empires Update',
+    changes: [
+      'Added Star Empires panel showing all players and their status',
+      'Empire colors and names displayed throughout the game',
+      'Turn submission status visible for all players',
+      'Added Mech Management panel for organizing your forces'
+    ]
+  },
+  {
+    version: '1.2.0',
+    title: 'The AI Awakens',
+    changes: [
+      'Added AI players to fill empty slots',
+      'AI makes strategic decisions for movement and building',
+      'AI aggressively pursues enemy planets and defends its own',
+      'Improved combat resolution and balance'
+    ]
+  },
+  {
+    version: '1.1.0',
+    title: 'Fog of War',
+    changes: [
+      'Added fog of war - only see tiles near your planets and mechs',
+      'Visibility range: 3 tiles from planets, 2 tiles from mechs',
+      'Enemy movements hidden until they enter your visibility',
+      'Strategic scouting now required for map awareness'
+    ]
+  },
+  {
+    version: '1.0.0',
+    title: 'Initial Release',
+    changes: [
+      'Core gameplay: planets, mechs, buildings, and combat',
+      'Turn-based multiplayer with configurable timers',
+      'Four mech types: Light, Medium, Heavy, and Assault',
+      'Three building types: Mining Colony, Factory, and Fortification',
+      'Google OAuth authentication',
+      'Real-time turn notifications via SSE'
+    ]
+  }
+];
+
+function openPatchNotes() {
+  const container = document.getElementById('patch-notes-content');
+  container.innerHTML = renderPatchNotes();
+  document.getElementById('patch-notes-modal').style.display = 'flex';
+}
+
+function closePatchNotes() {
+  document.getElementById('patch-notes-modal').style.display = 'none';
+}
+
+function renderPatchNotes() {
+  // Show latest 5 versions
+  const notesToShow = PATCH_NOTES.slice(0, 5);
+
+  return notesToShow.map(note => {
+    const [major, minor, patch] = note.version.split('.').map(Number);
+
+    let headingClass, headingTag;
+    if (patch === 0 && minor === 0) {
+      // Major version (X.0.0)
+      headingClass = 'patch-major';
+      headingTag = 'h2';
+    } else if (patch === 0) {
+      // Minor version (x.Y.0)
+      headingClass = 'patch-minor';
+      headingTag = 'h3';
+    } else {
+      // Hotfix (x.y.Z)
+      headingClass = 'patch-hotfix';
+      headingTag = 'h4';
+    }
+
+    const versionText = note.title
+      ? `v${note.version} - ${note.title}`
+      : `v${note.version}`;
+
+    return `
+      <div class="patch-entry ${headingClass}">
+        <${headingTag} class="patch-version">${escapeHtml(versionText)}</${headingTag}>
+        <ul class="patch-changes">
+          ${note.changes.map(change => `<li>${escapeHtml(change)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }).join('');
+}

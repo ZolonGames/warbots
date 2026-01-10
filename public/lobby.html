@@ -9,7 +9,7 @@
 <body>
   <div class="container">
     <header class="header-bar">
-      <h1><a href="/">WARBOTS</a> <span class="version-tag">v1.3.6</span></h1>
+      <h1><a href="/">WARBOTS</a> <span class="version-tag" onclick="openPatchNotes()" title="Click for patch notes">v1.3.8</span></h1>
       <div class="user-info">
         <span id="user-name"></span>
         <a href="/auth/logout" class="btn btn-small">Logout</a>
@@ -89,6 +89,17 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Patch Notes Modal -->
+  <div id="patch-notes-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content patch-notes-modal">
+      <h2>Patch Notes</h2>
+      <div id="patch-notes-content" class="patch-notes-content"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" onclick="closePatchNotes()">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Empire Setup Modal -->
