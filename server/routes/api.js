@@ -62,7 +62,7 @@ function handleObserverState(req, res, game) {
   // Get all players (exclude Pirates from display, but include for color lookups)
   const players = db.prepare(`
     SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, gp.credits, gp.user_id,
-           gp.is_ai, gp.has_submitted_turn,
+           gp.is_ai, gp.ai_difficulty, gp.has_submitted_turn,
            COALESCE(u.display_name, gp.empire_name) as display_name,
            (SELECT COUNT(*) FROM planets WHERE game_id = gp.game_id AND owner_id = gp.id) as planet_count,
            (SELECT COUNT(*) FROM mechs WHERE game_id = gp.game_id AND owner_id = gp.id) as mech_count,
@@ -201,7 +201,7 @@ router.get('/games/:id/state', (req, res) => {
     // Include Pirates but mark them with is_pirates flag (for color lookups, excluded from Star Empires)
     const players = db.prepare(`
       SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, gp.credits, gp.user_id,
-             gp.is_ai, gp.has_submitted_turn,
+             gp.is_ai, gp.ai_difficulty, gp.has_submitted_turn,
              COALESCE(u.display_name, gp.empire_name) as display_name,
              (SELECT COUNT(*) FROM planets WHERE game_id = gp.game_id AND owner_id = gp.id) as planet_count,
              (SELECT COUNT(*) FROM mechs WHERE game_id = gp.game_id AND owner_id = gp.id) as mech_count,

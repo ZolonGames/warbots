@@ -1,6 +1,22 @@
 {
   "notes": [
     {
+      "version": "1.5.0",
+      "date": "2026-01-10",
+      "title": "AI Overhaul",
+      "changes": [
+        "5 distinct AI personality types with unique strategies",
+        "Aggressive: Combat focused with fewer scouts, attacks quickly with heavy mechs",
+        "Balanced: Mix of exploration and combat, defends then attacks (default)",
+        "Defensive: Slow expansion, prioritizes fortifications, keeps mechs near planets",
+        "Expansionist: Heavy exploration with 10 scouts, builds attack forces methodically",
+        "Infestor: Swarm tactics with cheap light/medium mechs, rapid expansion",
+        "AI type now displayed next to empire name (e.g. 'Empire Name (AI - Aggressive)')",
+        "AI logging disabled in production for performance",
+        "Removed legacy Normal AI type"
+      ]
+    },
+    {
       "version": "1.4.6",
       "date": "2026-01-10",
       "changes": [

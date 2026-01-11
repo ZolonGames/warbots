@@ -905,12 +905,12 @@ function checkWinCondition(gameId) {
   const game = db.prepare('SELECT current_turn FROM games WHERE id = ?').get(gameId);
   const turnNumber = game.current_turn;
 
-  // Count remaining non-eliminated players (LEFT JOIN to handle AI players)
+  // Count remaining non-eliminated players (exclude Pirates - they don't count for victory)
   const remainingPlayers = db.prepare(`
     SELECT gp.*, COALESCE(u.display_name, gp.empire_name) as display_name
     FROM game_players gp
     LEFT JOIN users u ON gp.user_id = u.id
-    WHERE gp.game_id = ? AND gp.is_eliminated = 0
+    WHERE gp.game_id = ? AND gp.is_eliminated = 0 AND gp.empire_name != 'Pirates'
   `).all(gameId);
 
   if (remainingPlayers.length === 1) {

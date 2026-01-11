@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
+// Only enable AI logging in development
+const IS_DEV = process.env.NODE_ENV !== 'production';
+
 // Log file path
 const LOG_FILE = path.join(__dirname, '../../data/ai.log');
 
@@ -14,10 +17,12 @@ const FLUSH_INTERVAL_MS = 500; // Flush every 500ms max
 let cullCounter = 0;
 const CULL_FREQUENCY = 100; // Only check culling every 100 turns
 
-// Ensure data directory exists
-const dataDir = path.dirname(LOG_FILE);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+// Ensure data directory exists (only in dev)
+if (IS_DEV) {
+  const dataDir = path.dirname(LOG_FILE);
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
 }
 
 /**
@@ -49,6 +54,8 @@ function scheduleFlush() {
  * Removes older entries beyond MAX_LOG_LINES
  */
 function cullLog() {
+  if (!IS_DEV) return; // No log file in production
+
   // Only cull periodically to reduce I/O
   cullCounter++;
   if (cullCounter < CULL_FREQUENCY) return;
@@ -80,6 +87,7 @@ function getTimestamp() {
  * @param {string} message - The message to log
  */
 function log(message) {
+  if (!IS_DEV) return; // Skip logging in production
   const entry = `[${getTimestamp()}] ${message}\n`;
   logBuffer.push(entry);
   scheduleFlush();
@@ -89,20 +97,23 @@ function log(message) {
  * Log separator for readability
  */
 function logSeparator() {
+  if (!IS_DEV) return;
   logBuffer.push('─'.repeat(60) + '\n');
   scheduleFlush();
 }
 
-// Ensure buffer is flushed on exit
-process.on('exit', () => {
-  if (logBuffer.length > 0) {
-    try {
-      fs.appendFileSync(LOG_FILE, logBuffer.join(''));
-    } catch (e) {
-      // Ignore errors on exit
+// Ensure buffer is flushed on exit (only in dev)
+if (IS_DEV) {
+  process.on('exit', () => {
+    if (logBuffer.length > 0) {
+      try {
+        fs.appendFileSync(LOG_FILE, logBuffer.join(''));
+      } catch (e) {
+        // Ignore errors on exit
+      }
     }
-  }
-});
+  });
+}
 
 /**
  * Log new turn start

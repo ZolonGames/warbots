@@ -819,6 +819,11 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function capitalizeFirst(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 // ==================== END PLANET MANAGEMENT ====================
 
 // ==================== MECH MANAGEMENT ====================
@@ -1188,9 +1193,12 @@ function renderStarEmpiresList() {
     const empireColor = player.empire_color || playerColors[(player.player_number - 1) % playerColors.length];
     const empireName = player.empire_name || `Player ${player.player_number}`;
 
+    // AI type tag
+    const aiTag = player.is_ai ? ` <span class="ai-tag">(AI - ${capitalizeFirst(player.ai_difficulty || 'Normal')})</span>` : '';
+
     return `
       <tr>
-        <td><span class="se-empire-name" style="color: ${empireColor}">${escapeHtml(empireName)}</span></td>
+        <td><span class="se-empire-name" style="color: ${empireColor}">${escapeHtml(empireName)}${aiTag}</span></td>
         <td><span class="se-status ${statusClass}">${status}</span></td>
         <td class="se-stat">${planetCount}</td>
         <td class="se-stat">${mechCount}</td>
@@ -3072,7 +3080,7 @@ function updateLobbyPanel() {
     const player = players[i];
     if (player) {
       const color = player.empire_color || '#888';
-      const aiTag = player.is_ai ? ' <span class="ai-tag">[AI]</span>' : '';
+      const aiTag = player.is_ai ? ` <span class="ai-tag">(AI - ${capitalizeFirst(player.ai_difficulty || 'Normal')})</span>` : '';
       html += `
         <div class="lobby-player joined">
           <span class="player-color" style="background-color: ${color};"></span>
@@ -3608,10 +3616,11 @@ function updateObserverPanel() {
       statusHtml = '<span class="player-status active">ACTIVE</span>';
     }
 
+    const aiTypeTag = player.is_ai ? ` <span class="ai-tag">(AI - ${capitalizeFirst(player.ai_difficulty || 'Normal')})</span>` : '';
     html += `
       <div class="observer-player-item" style="border-left: 3px solid ${player.empire_color};">
         <div class="observer-player-name" style="color: ${player.empire_color};">
-          ${player.empire_name || player.display_name}
+          ${player.empire_name || player.display_name}${aiTypeTag}
           ${statusHtml}
         </div>
         <div class="observer-player-stats">

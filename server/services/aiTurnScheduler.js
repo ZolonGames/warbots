@@ -1,7 +1,32 @@
 const { db } = require('../config/database');
-const { generateAIOrders } = require('./aiDecision');
+const { generateExpansionistOrders } = require('./aiExpansionist');
+const { generateAggressiveOrders } = require('./aiAggressive');
+const { generateBalancedOrders } = require('./aiBalanced');
+const { generateInfestorOrders } = require('./aiInfestor');
+const { generateDefensiveOrders } = require('./aiDefensive');
 const { processTurn } = require('./turnProcessor');
 const aiLogger = require('./aiLogger');
+
+/**
+ * Get the appropriate AI order generator based on AI type
+ */
+function getAIOrderGenerator(aiPlayer) {
+  switch (aiPlayer.ai_difficulty) {
+    case 'expansionist':
+      return generateExpansionistOrders;
+    case 'aggressive':
+      return generateAggressiveOrders;
+    case 'balanced':
+      return generateBalancedOrders;
+    case 'infestor':
+      return generateInfestorOrders;
+    case 'defensive':
+      return generateDefensiveOrders;
+    default:
+      // Default to balanced for any unknown type
+      return generateBalancedOrders;
+  }
+}
 
 // Store scheduled AI turns to prevent duplicates
 const scheduledAITurns = new Map(); // gameId -> Set of aiPlayerIds
@@ -86,9 +111,10 @@ function submitAITurn(gameId, aiPlayerId) {
     // Log AI processing start
     aiLogger.logAIProcessingStart(aiPlayer.empire_name, aiPlayerId, gameId);
 
-    // Generate AI orders
-    console.log(`AI ${aiPlayer.empire_name} generating orders for turn ${game.current_turn}...`);
-    const orders = generateAIOrders(gameId, aiPlayer);
+    // Generate AI orders using appropriate generator
+    const orderGenerator = getAIOrderGenerator(aiPlayer);
+    console.log(`AI ${aiPlayer.empire_name} (${aiPlayer.ai_difficulty || 'normal'}) generating orders for turn ${game.current_turn}...`);
+    const orders = orderGenerator(gameId, aiPlayer);
 
     // Filter out any invalid orders (keeps valid ones instead of rejecting all)
     const filteredOrders = filterValidAIOrders(orders, aiPlayer, game);
