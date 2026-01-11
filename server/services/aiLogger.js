@@ -193,8 +193,11 @@ function logAnalysis(empireName, analysis) {
   if (analysis.isDominating) {
     log(`    - DOMINATING: Aggressive mode enabled`);
   }
+  if (analysis.hasOverwhelmingForce) {
+    log(`    - OVERWHELMING FORCE: All-out attack mode`);
+  }
   if (analysis.hasWeakEnemy) {
-    log(`    - WEAK ENEMY DETECTED: Finishing blow mode - ${analysis.weakEnemies.length} weak enemies`);
+    log(`    - WEAK ENEMY DETECTED: Finishing blow mode - ${analysis.weakEnemies?.length || 0} weak enemies`);
   }
   if (analysis.needsToReclaimHomeworld) {
     log(`    - HOMEWORLD LOST: Needs reclaim`);

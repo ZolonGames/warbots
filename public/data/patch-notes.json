@@ -1,6 +1,16 @@
 {
   "notes": [
     {
+      "version": "1.4.6",
+      "date": "2026-01-10",
+      "changes": [
+        "Turn summary now shows 'Earnings' with breakdown by planets and mining colonies",
+        "AI now detects overwhelming force (3x enemy mechs) and attacks aggressively",
+        "AI finishing blow logic improved - commits all forces when dominant",
+        "Fixed AI not attacking enemy's final planets"
+      ]
+    },
+    {
       "version": "1.4.5",
       "date": "2026-01-10",
       "changes": [

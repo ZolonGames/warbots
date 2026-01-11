@@ -371,7 +371,7 @@ function updateEventLog() {
 
     // Income events
     if (incomeEvents.length > 0) {
-      html += '<div class="log-section-header">Income</div>';
+      html += '<div class="log-section-header">Earnings</div>';
       for (const log of incomeEvents) {
         html += formatEventLog(log);
       }
@@ -1403,10 +1403,26 @@ function logIcon(iconPath) {
 }
 
 function formatIncomeEvent(log) {
-  const amount = log.detailedLog?.amount || 0;
+  const data = log.detailedLog || {};
+  const amount = data.amount || 0;
+  const planetIncome = data.planetIncome || 0;
+  const planetCount = data.planetCount || 0;
+  const miningIncome = data.miningIncome || 0;
+  const miningCount = data.miningCount || 0;
+
+  let breakdownHtml = '<div class="income-breakdown">';
+  if (planetIncome > 0) {
+    breakdownHtml += `<div class="breakdown-line">${logIcon('Icon-Planet.png')} +${planetIncome} from ${planetCount} planet${planetCount !== 1 ? 's' : ''}</div>`;
+  }
+  if (miningIncome > 0) {
+    breakdownHtml += `<div class="breakdown-line">${logIcon('Mining Colony.png')} +${miningIncome} from ${miningCount} mining colon${miningCount !== 1 ? 'ies' : 'y'}</div>`;
+  }
+  breakdownHtml += '</div>';
+
   return `<div class="log-entry log-income">
     <span class="log-icon">${logIcon('Credit.png')}</span>
     Earned <span class="credits-amount">+${amount} credits</span> from your empire
+    ${breakdownHtml}
   </div>`;
 }
 
@@ -3356,7 +3372,7 @@ function showTurnSummary(turnNumber, transitionType = 'turn') {
 
   // Add income section
   if (incomeEvents.length > 0) {
-    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Income</div>' });
+    eventRevealQueue.push({ type: 'header', html: '<div class="log-section-header">Earnings</div>' });
     for (const log of incomeEvents) {
       eventRevealQueue.push({ type: 'event', html: formatEventLog(log) });
     }

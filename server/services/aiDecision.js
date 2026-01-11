@@ -274,6 +274,11 @@ function analyzeGameState(gameState, aiPlayer) {
   // This is used to trigger more aggressive behavior
   const isDominating = planetCount >= 8 && visibleEnemyCount > 0 && planetCount >= visibleEnemyCount * 2;
 
+  // Check if we have overwhelming force - 3x more mechs than visible enemy mechs
+  const totalVisibleEnemyMechs = visibleEnemyMechs.length;
+  const hasOverwhelmingForce = ownedMechs.length >= 6 &&
+    (totalVisibleEnemyMechs === 0 || ownedMechs.length >= totalVisibleEnemyMechs * 3);
+
   // Check if any enemy is weak (1-3 visible planets) - these should be finished off
   const enemyPlanetsByOwner = {};
   for (const planet of visibleEnemyPlanets) {
@@ -282,7 +287,8 @@ function analyzeGameState(gameState, aiPlayer) {
   const weakEnemies = Object.entries(enemyPlanetsByOwner)
     .filter(([ownerId, count]) => count <= 3)
     .map(([ownerId]) => parseInt(ownerId));
-  const hasWeakEnemy = weakEnemies.length > 0;
+  // Consider enemy weak if they have few visible planets OR we have overwhelming force
+  const hasWeakEnemy = weakEnemies.length > 0 || (hasOverwhelmingForce && visibleEnemyPlanets.length > 0);
 
   // Homeworld reclaim priority
   let needsToReclaimHomeworld = false;
@@ -326,6 +332,7 @@ function analyzeGameState(gameState, aiPlayer) {
     needsToReclaimHomeworld,
     canReclaimHomeworldNow,
     isDominating,
+    hasOverwhelmingForce,
     hasWeakEnemy,
     weakEnemies
   };
@@ -620,45 +627,54 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
     }
   }
 
-  // FINISHING BLOW: If enemy has only 1-2 planets visible, send ALL available mechs to attack
+  // FINISHING BLOW: If we have overwhelming force or enemy is weak, attack aggressively
   // This ensures we don't let weak enemies survive indefinitely
-  if (analysis.hasWeakEnemy && visibleEnemyPlanets.length > 0) {
-    // Find planets belonging to weak enemies (1-3 planets)
-    const weakEnemyPlanets = visibleEnemyPlanets.filter(p =>
-      analysis.weakEnemies.includes(p.owner_id)
-    );
+  if ((analysis.hasWeakEnemy || analysis.hasOverwhelmingForce) && visibleEnemyPlanets.length > 0) {
+    // Find planets belonging to weak enemies, or all enemy planets if we have overwhelming force
+    let targetPlanets = visibleEnemyPlanets;
+    if (analysis.weakEnemies.length > 0) {
+      const weakEnemyPlanets = visibleEnemyPlanets.filter(p =>
+        analysis.weakEnemies.includes(p.owner_id)
+      );
+      if (weakEnemyPlanets.length > 0) {
+        targetPlanets = weakEnemyPlanets;
+      }
+    }
 
-    if (weakEnemyPlanets.length > 0 && weakEnemyPlanets.length <= 2) {
-      // Very weak enemy - send everyone to finish them off!
-      // Sort by unfortified first
-      weakEnemyPlanets.sort((a, b) => {
-        const aHasFort = a.buildings && a.buildings.some(b => b.type === 'fortification');
-        const bHasFort = b.buildings && b.buildings.some(b => b.type === 'fortification');
-        if (aHasFort !== bHasFort) return aHasFort ? 1 : -1;
-        return 0;
-      });
+    // Sort by: undefended first, then unfortified, then closest
+    targetPlanets.sort((a, b) => {
+      const aMechsOnPlanet = visibleEnemyMechs.filter(m => m.x === a.x && m.y === a.y).length;
+      const bMechsOnPlanet = visibleEnemyMechs.filter(m => m.x === b.x && m.y === b.y).length;
+      // Undefended planets first
+      if (aMechsOnPlanet === 0 && bMechsOnPlanet > 0) return -1;
+      if (bMechsOnPlanet === 0 && aMechsOnPlanet > 0) return 1;
 
-      const targetPlanet = weakEnemyPlanets[0];
+      const aHasFort = a.buildings && a.buildings.some(b => b.type === 'fortification');
+      const bHasFort = b.buildings && b.buildings.some(b => b.type === 'fortification');
+      if (aHasFort !== bHasFort) return aHasFort ? 1 : -1;
+      return 0;
+    });
 
-      // Send ALL unassigned mechs to attack this target
-      for (const mech of ownedMechs) {
-        if (assignedMechs.has(mech.id)) continue;
+    const targetPlanet = targetPlanets[0];
 
-        // Skip mechs that are the sole garrison of a fortified planet (keep 1 defender)
-        const isOnFortifiedPlanet = defendedPlanets.some(dp =>
-          mech.x === dp.planet.x && mech.y === dp.planet.y
-        );
-        if (isOnFortifiedPlanet) {
-          const dp = defendedPlanets.find(d => mech.x === d.planet.x && mech.y === d.planet.y);
-          const mechsHere = dp.mechs.filter(m => !assignedMechs.has(m.id));
-          if (mechsHere.length <= 1) continue; // Keep at least 1 garrison
-        }
+    // Send ALL unassigned mechs to attack this target when overwhelming
+    for (const mech of ownedMechs) {
+      if (assignedMechs.has(mech.id)) continue;
 
-        const move = moveToward(mech.x, mech.y, targetPlanet.x, targetPlanet.y, gridSize);
-        if (move) {
-          moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
-          assignedMechs.add(mech.id);
-        }
+      // Skip mechs that are the sole garrison of a fortified planet (keep 1 defender)
+      const isOnFortifiedPlanet = defendedPlanets.some(dp =>
+        mech.x === dp.planet.x && mech.y === dp.planet.y
+      );
+      if (isOnFortifiedPlanet) {
+        const dp = defendedPlanets.find(d => mech.x === d.planet.x && mech.y === d.planet.y);
+        const mechsHere = dp.mechs.filter(m => !assignedMechs.has(m.id));
+        if (mechsHere.length <= 1) continue; // Keep at least 1 garrison
+      }
+
+      const move = moveToward(mech.x, mech.y, targetPlanet.x, targetPlanet.y, gridSize);
+      if (move) {
+        moves.push({ mechId: mech.id, toX: move.x, toY: move.y });
+        assignedMechs.add(mech.id);
       }
     }
   }
@@ -736,8 +752,8 @@ function generateMoveOrders(gameState, aiPlayer, analysis) {
   }
 
   // Priority 1: ATTACK enemy planets with grouped forces (for mech-defended planets)
-  // When dominating or facing weak enemies, be more aggressive (smaller groups attack)
-  const MIN_ATTACK_GROUP = (analysis.isDominating || analysis.hasWeakEnemy) ? 2 : 4;
+  // When dominating, overwhelming, or facing weak enemies, be more aggressive (smaller groups attack)
+  const MIN_ATTACK_GROUP = (analysis.isDominating || analysis.hasWeakEnemy || analysis.hasOverwhelmingForce) ? 2 : 4;
   const MAX_ATTACK_GROUP = 8;
   const IDEAL_ATTACK_GROUP = 4;
 

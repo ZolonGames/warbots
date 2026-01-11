@@ -2,7 +2,7 @@ const { db } = require('../config/database');
 // Force save after turn processing completes
 const forceSaveDatabase = () => db.forceSave && db.forceSave();
 const { resolveMultiCombat } = require('./combatResolver');
-const { calculateIncome } = require('./visibilityCalc');
+const { calculateIncome, calculateIncomeBreakdown } = require('./visibilityCalc');
 const { MECH_TYPES } = require('./mapGenerator');
 
 // Import AI scheduler and broadcast function (will be used after turn processing)
@@ -633,16 +633,26 @@ function processBuilds(gameId, turnNumber, ordersByPlayer, players) {
  */
 function applyIncome(gameId, turnNumber, players) {
   for (const player of players) {
-    const income = calculateIncome(gameId, player.id);
+    const breakdown = calculateIncomeBreakdown(gameId, player.id);
+    const income = breakdown.planetIncome + breakdown.miningIncome;
 
     db.prepare(`
       UPDATE game_players SET credits = credits + ? WHERE id = ?
     `).run(income, player.id);
 
-    // Log income event
+    // Get planet count for the log
+    const planetCount = db.prepare(`
+      SELECT COUNT(*) as count FROM planets WHERE game_id = ? AND owner_id = ?
+    `).get(gameId, player.id).count;
+
+    // Log income event with breakdown
     if (income > 0) {
       addEventLog(gameId, turnNumber, 'income', player.id, {
-        amount: income
+        amount: income,
+        planetIncome: breakdown.planetIncome,
+        planetCount: planetCount,
+        miningIncome: breakdown.miningIncome,
+        miningCount: breakdown.miningCount
       });
     }
   }

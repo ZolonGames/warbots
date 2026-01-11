@@ -1473,6 +1473,25 @@ a:hover {
   font-weight: bold;
 }
 
+.income-breakdown {
+  margin-top: 4px;
+  margin-left: 24px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.income-breakdown .breakdown-line {
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.income-breakdown .stat-icon {
+  width: 14px;
+  height: 14px;
+}
+
 .log-lost {
   color: var(--accent-red);
 }
