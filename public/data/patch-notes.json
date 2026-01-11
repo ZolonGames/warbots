@@ -1,6 +1,16 @@
 {
   "notes": [
     {
+      "version": "1.4.5",
+      "date": "2026-01-10",
+      "changes": [
+        "Added Observable Games section - watch active games you're not part of",
+        "Major server performance fix - debounced database saves instead of per-operation",
+        "Fixed N+1 query pattern in planet/building loading",
+        "Mech tooltip now shows breakdown by type with icons for your mechs"
+      ]
+    },
+    {
       "version": "1.4.4",
       "date": "2026-01-10",
       "changes": [

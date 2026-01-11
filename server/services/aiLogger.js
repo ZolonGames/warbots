@@ -7,6 +7,13 @@ const LOG_FILE = path.join(__dirname, '../../data/ai.log');
 // Maximum lines to keep in log file
 const MAX_LOG_LINES = 10000;
 
+// Buffered logging - accumulate entries and write in batches
+let logBuffer = [];
+let flushTimeout = null;
+const FLUSH_INTERVAL_MS = 500; // Flush every 500ms max
+let cullCounter = 0;
+const CULL_FREQUENCY = 100; // Only check culling every 100 turns
+
 // Ensure data directory exists
 const dataDir = path.dirname(LOG_FILE);
 if (!fs.existsSync(dataDir)) {
@@ -14,25 +21,51 @@ if (!fs.existsSync(dataDir)) {
 }
 
 /**
- * Cull log file to keep only the most recent lines
+ * Flush log buffer to file asynchronously
+ */
+function flushLogBuffer() {
+  if (logBuffer.length === 0) return;
+
+  const content = logBuffer.join('');
+  logBuffer = [];
+  flushTimeout = null;
+
+  // Write asynchronously
+  fs.appendFile(LOG_FILE, content, (err) => {
+    if (err) console.error('Failed to write AI log:', err);
+  });
+}
+
+/**
+ * Schedule a flush of the log buffer
+ */
+function scheduleFlush() {
+  if (flushTimeout) return;
+  flushTimeout = setTimeout(flushLogBuffer, FLUSH_INTERVAL_MS);
+}
+
+/**
+ * Cull log file to keep only the most recent lines (async)
  * Removes older entries beyond MAX_LOG_LINES
  */
 function cullLog() {
-  try {
-    if (!fs.existsSync(LOG_FILE)) return;
+  // Only cull periodically to reduce I/O
+  cullCounter++;
+  if (cullCounter < CULL_FREQUENCY) return;
+  cullCounter = 0;
 
-    const content = fs.readFileSync(LOG_FILE, 'utf8');
+  // Run asynchronously to not block
+  fs.readFile(LOG_FILE, 'utf8', (err, content) => {
+    if (err) return; // File might not exist yet
+
     const lines = content.split('\n');
-
-    // Only cull if we exceed the limit
     if (lines.length <= MAX_LOG_LINES) return;
 
-    // Keep only the most recent lines
     const recentLines = lines.slice(-MAX_LOG_LINES);
-    fs.writeFileSync(LOG_FILE, recentLines.join('\n'));
-  } catch (error) {
-    console.error('Failed to cull AI log:', error);
-  }
+    fs.writeFile(LOG_FILE, recentLines.join('\n'), (err) => {
+      if (err) console.error('Failed to cull AI log:', err);
+    });
+  });
 }
 
 /**
@@ -43,20 +76,33 @@ function getTimestamp() {
 }
 
 /**
- * Write a log entry to ai.log
+ * Write a log entry to ai.log (buffered)
  * @param {string} message - The message to log
  */
 function log(message) {
   const entry = `[${getTimestamp()}] ${message}\n`;
-  fs.appendFileSync(LOG_FILE, entry);
+  logBuffer.push(entry);
+  scheduleFlush();
 }
 
 /**
  * Log separator for readability
  */
 function logSeparator() {
-  fs.appendFileSync(LOG_FILE, '─'.repeat(60) + '\n');
+  logBuffer.push('─'.repeat(60) + '\n');
+  scheduleFlush();
 }
+
+// Ensure buffer is flushed on exit
+process.on('exit', () => {
+  if (logBuffer.length > 0) {
+    try {
+      fs.appendFileSync(LOG_FILE, logBuffer.join(''));
+    } catch (e) {
+      // Ignore errors on exit
+    }
+  }
+});
 
 /**
  * Log new turn start

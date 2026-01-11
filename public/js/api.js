@@ -65,6 +65,10 @@ const api = {
     return this.get('/api/games/mine');
   },
 
+  async getObservableGames() {
+    return this.get('/api/games/observable');
+  },
+
   async createGame(data) {
     return this.post('/api/games', data);
   },
@@ -77,8 +81,9 @@ const api = {
     return this.post(`/api/games/${gameId}/start`);
   },
 
-  async getGameState(gameId) {
-    return this.get(`/api/games/${gameId}/state`);
+  async getGameState(gameId, observe = false) {
+    const url = observe ? `/api/games/${gameId}/state?observe=1` : `/api/games/${gameId}/state`;
+    return this.get(url);
   },
 
   async submitTurn(gameId, orders) {

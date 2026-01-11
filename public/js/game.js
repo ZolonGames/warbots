@@ -124,10 +124,14 @@ async function loadPendingOrders(gameId, turnNumber) {
   }
 }
 
+// Track if viewing as external observer
+let isExternalObserver = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Get game ID from URL
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('id');
+  isExternalObserver = params.get('observe') === '1';
 
   if (!gameId) {
     alert('No game ID provided');
@@ -149,7 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function initGame(gameId) {
   try {
     // Fetch initial game state
-    gameState = await api.getGameState(gameId);
+    gameState = await api.getGameState(gameId, isExternalObserver);
     playerId = gameState.playerId;
 
     // Update header info
@@ -262,10 +266,13 @@ function updatePlayerInfo() {
 
   // Update empire name display
   const currentPlayer = gameState.players.find(p => p.id === playerId);
+  const empireDisplay = document.getElementById('empire-name-display');
   if (currentPlayer) {
-    const empireDisplay = document.getElementById('empire-name-display');
     empireDisplay.textContent = currentPlayer.empire_name || `Player ${currentPlayer.player_number}`;
     empireDisplay.style.color = currentPlayer.empire_color || '#4a9eff';
+  } else if (gameState.isExternalObserver) {
+    empireDisplay.textContent = 'Observer';
+    empireDisplay.style.color = '#888888';
   }
 
   // Update empire stats
@@ -2223,27 +2230,43 @@ function handleTileHover(tile, event) {
 
   if (mechs.length > 0) {
     if (planet) html += '<br>';
-    // Group mechs by owner and show with colored empire names
+    // Group mechs by owner
     const mechsByOwner = {};
     for (const mech of mechs) {
       if (!mechsByOwner[mech.owner_id]) {
-        mechsByOwner[mech.owner_id] = 0;
+        mechsByOwner[mech.owner_id] = [];
       }
-      mechsByOwner[mech.owner_id]++;
+      mechsByOwner[mech.owner_id].push(mech);
     }
 
     const ownerIds = Object.keys(mechsByOwner);
-    if (ownerIds.length === 1) {
-      // Single owner - show count then empire name on next line
-      const ownerId = parseInt(ownerIds[0]);
-      html += `<strong>Mechs:</strong> ${mechs.length}<br>`;
-      html += `${coloredPlayerName(ownerId)}`;
-    } else {
-      // Multiple owners - show each with count
-      html += `<strong>Mechs:</strong><br>`;
-      for (const ownerId of ownerIds) {
-        html += `${coloredPlayerName(parseInt(ownerId))}: ${mechsByOwner[ownerId]}<br>`;
+
+    // For player's own mechs, show detailed breakdown by type
+    const playerMechs = mechsByOwner[playerId];
+    if (playerMechs && playerMechs.length > 0) {
+      // Count by type
+      const typeCounts = { light: 0, medium: 0, heavy: 0, assault: 0 };
+      for (const mech of playerMechs) {
+        if (typeCounts.hasOwnProperty(mech.type)) {
+          typeCounts[mech.type]++;
+        }
       }
+
+      html += `<strong>Your Mechs:</strong> ${playerMechs.length}<br>`;
+      const typeNames = { light: 'Light', medium: 'Medium', heavy: 'Heavy', assault: 'Assault' };
+      const typeOrder = ['assault', 'heavy', 'medium', 'light'];
+      for (const type of typeOrder) {
+        if (typeCounts[type] > 0) {
+          html += `<img src="/assets/${typeNames[type]}.png" class="stat-icon" alt=""> ${typeNames[type]}: ${typeCounts[type]}<br>`;
+        }
+      }
+    }
+
+    // Show enemy mechs with counts
+    for (const ownerId of ownerIds) {
+      if (parseInt(ownerId) === playerId) continue; // Skip player's mechs (already shown)
+      const enemyMechs = mechsByOwner[ownerId];
+      html += `${coloredPlayerName(parseInt(ownerId))}: ${enemyMechs.length} Mechs<br>`;
     }
   }
 
@@ -3183,7 +3206,7 @@ async function submitAIPlayer(e) {
 
     // Refresh game state to show new AI player
     const gameId = new URLSearchParams(window.location.search).get('id');
-    gameState = await api.getGameState(gameId);
+    gameState = await api.getGameState(gameId, isExternalObserver);
     updateLobbyPanel();
   } catch (error) {
     alert('Failed to add AI player: ' + error.message);
@@ -3543,6 +3566,9 @@ function enterObserverMode() {
     const statusColor = gameState.isVictor ? '#4aff4a' : '#ff4a4a';
     empireDisplay.innerHTML = `${currentPlayer.empire_name || `Player ${currentPlayer.player_number}`}<span style="color: ${statusColor};">${statusText}</span>`;
     empireDisplay.style.color = currentPlayer.empire_color || '#4a9eff';
+  } else if (gameState.isExternalObserver) {
+    empireDisplay.innerHTML = '<span style="color: #888888;">Observer Mode</span>';
+    empireDisplay.style.color = '#888888';
   }
 }
 
@@ -3633,7 +3659,8 @@ function stopTurnTimer() {
 
 function setupEventSource(gameId) {
   // SSE for real-time updates
-  const eventSource = new EventSource(`/api/games/${gameId}/events`);
+  const url = isExternalObserver ? `/api/games/${gameId}/events?observe=1` : `/api/games/${gameId}/events`;
+  const eventSource = new EventSource(url);
 
   eventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -3661,7 +3688,7 @@ async function refreshGameState(gameId) {
     const previousStatus = gameState?.status;
     const wasEliminated = gameState?.isEliminated;
     const wasObserver = gameState?.isObserver;
-    gameState = await api.getGameState(gameId);
+    gameState = await api.getGameState(gameId, isExternalObserver);
 
     document.getElementById('turn-number').textContent = gameState.currentTurn;
     updatePlayerInfo();
@@ -3750,7 +3777,7 @@ async function refreshGameState(gameId) {
 
 async function handleGameStarted(gameId) {
   try {
-    gameState = await api.getGameState(gameId);
+    gameState = await api.getGameState(gameId, isExternalObserver);
 
     document.getElementById('turn-number').textContent = gameState.currentTurn;
     updatePlayerInfo();

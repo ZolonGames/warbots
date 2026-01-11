@@ -1,4 +1,6 @@
 const { db } = require('../config/database');
+// Force save after turn processing completes
+const forceSaveDatabase = () => db.forceSave && db.forceSave();
 const { resolveMultiCombat } = require('./combatResolver');
 const { calculateIncome } = require('./visibilityCalc');
 const { MECH_TYPES } = require('./mapGenerator');
@@ -198,6 +200,9 @@ function processTurn(gameId) {
       }, 1000);
     }
   }
+
+  // Force save database after all turn operations complete
+  forceSaveDatabase();
 
   console.log(`Turn ${game.current_turn} processed for game ${gameId}`);
 }

@@ -278,13 +278,60 @@ async function initializeDatabase() {
 }
 
 // Save database to disk
+let saveTimeout = null;
+let pendingSave = false;
+const SAVE_DEBOUNCE_MS = 1000; // Save at most once per second
+
 function saveDatabase() {
   if (db) {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
+    pendingSave = false;
   }
 }
+
+// Debounced save - batches multiple writes into one disk operation
+function scheduleSave() {
+  pendingSave = true;
+  if (saveTimeout) {
+    return; // Already scheduled
+  }
+  saveTimeout = setTimeout(() => {
+    saveTimeout = null;
+    if (pendingSave) {
+      saveDatabase();
+    }
+  }, SAVE_DEBOUNCE_MS);
+}
+
+// Force immediate save (use sparingly - for critical operations)
+function saveNow() {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  if (pendingSave || db) {
+    saveDatabase();
+  }
+}
+
+// Ensure database is saved on process exit
+process.on('exit', () => {
+  if (pendingSave) {
+    saveDatabase();
+  }
+});
+
+process.on('SIGINT', () => {
+  saveNow();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  saveNow();
+  process.exit(0);
+});
 
 // Helper to get last insert rowid
 function getLastInsertRowid() {
@@ -302,7 +349,7 @@ const dbWrapper = {
       run(...params) {
         db.run(sql, params);
         const lastId = getLastInsertRowid();
-        saveDatabase();
+        scheduleSave(); // Debounced save instead of immediate
         return { lastInsertRowid: lastId };
       },
       get(...params) {
@@ -330,21 +377,22 @@ const dbWrapper = {
   },
   exec(sql) {
     db.run(sql);
-    saveDatabase();
+    scheduleSave(); // Debounced save instead of immediate
   },
   transaction(fn) {
-    // Note: sql.js handles transactions differently than better-sqlite3
-    // We avoid explicit transactions here as they can cause issues with sql.js
-    // Instead, we just run the function and save after each operation
+    // Run all operations, then schedule a single save
     return () => {
       try {
         fn();
-        saveDatabase();
+        scheduleSave();
       } catch (error) {
-        // sql.js auto-saves are handled per operation, so just re-throw
         throw error;
       }
     };
+  },
+  // Force immediate save - call after critical operations complete
+  forceSave() {
+    saveNow();
   }
 };
 

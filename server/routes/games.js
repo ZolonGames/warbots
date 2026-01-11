@@ -56,6 +56,29 @@ router.get('/', (req, res) => {
   }
 });
 
+// Get observable games (active games user is NOT in)
+router.get('/observable', (req, res) => {
+  try {
+    const games = db.prepare(`
+      SELECT
+        g.*,
+        u.display_name as host_name,
+        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id AND empire_name != 'Pirates') as player_count,
+        (SELECT COUNT(*) FROM game_players WHERE game_id = g.id AND empire_name != 'Pirates' AND is_eliminated = 0) as remaining_players
+      FROM games g
+      JOIN users u ON g.host_id = u.id
+      WHERE g.status = 'active'
+        AND g.id NOT IN (SELECT game_id FROM game_players WHERE user_id = ?)
+      ORDER BY g.created_at DESC
+    `).all(req.user.id);
+
+    res.json(games);
+  } catch (error) {
+    console.error('Failed to get observable games:', error);
+    res.status(500).json({ error: 'Failed to get observable games' });
+  }
+});
+
 // Get user's games (active, waiting, or finished)
 router.get('/mine', (req, res) => {
   try {

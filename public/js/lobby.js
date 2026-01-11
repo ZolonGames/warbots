@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('user-name').textContent = authData.user.displayName;
 
   // Load games
-  await Promise.all([loadAvailableGames(), loadMyGames(), loadFinishedGames()]);
+  await Promise.all([loadAvailableGames(), loadMyGames(), loadObservableGames(), loadFinishedGames()]);
 
   // Set up create game form
   document.getElementById('create-game-form').addEventListener('submit', handleCreateGame);
@@ -113,6 +113,42 @@ async function loadFinishedGames() {
   } catch (error) {
     container.innerHTML = `<p class="error">Failed to load finished games: ${error.message}</p>`;
   }
+}
+
+async function loadObservableGames() {
+  const container = document.getElementById('observable-games-container');
+
+  try {
+    const games = await api.getObservableGames();
+
+    if (games.length === 0) {
+      container.innerHTML = '<p class="empty">No games to observe.</p>';
+      return;
+    }
+
+    container.innerHTML = games.map(game => renderObservableGameCard(game)).join('');
+  } catch (error) {
+    container.innerHTML = `<p class="error">Failed to load observable games: ${error.message}</p>`;
+  }
+}
+
+function renderObservableGameCard(game) {
+  return `
+    <div class="game-card">
+      <div class="game-card-info">
+        <h4>${escapeHtml(game.name)}</h4>
+        <p>
+          Turn ${game.current_turn} |
+          ${game.grid_size}x${game.grid_size} map |
+          <span class="players">${game.remaining_players}/${game.player_count} Players Remaining</span> |
+          ${formatTimer(game.turn_timer)}
+        </p>
+      </div>
+      <a href="/game.html?id=${game.id}&observe=1" class="btn btn-primary btn-small">
+        Observe
+      </a>
+    </div>
+  `;
 }
 
 function renderGameCard(game) {
@@ -337,7 +373,7 @@ async function deleteGame(gameId) {
   try {
     await api.deleteGame(gameId);
     // Reload the games lists
-    await Promise.all([loadAvailableGames(), loadMyGames(), loadFinishedGames()]);
+    await Promise.all([loadAvailableGames(), loadMyGames(), loadObservableGames(), loadFinishedGames()]);
   } catch (error) {
     alert('Failed to delete game: ' + error.message);
   }

@@ -73,18 +73,34 @@ function getVisiblePlanets(gameId, playerId, visibleTiles) {
     WHERE p.game_id = ?
   `).all(playerId, gameId);
 
+  // Get all buildings for all planets in one query (fixes N+1 pattern)
+  const allBuildings = db.prepare(`
+    SELECT b.planet_id, b.type, b.hp,
+           CASE WHEN b.type = 'fortification' THEN 30 ELSE 10 END as max_hp
+    FROM buildings b
+    JOIN planets p ON b.planet_id = p.id
+    WHERE p.game_id = ?
+  `).all(gameId);
+
+  // Group buildings by planet_id for fast lookup
+  const buildingsByPlanet = new Map();
+  for (const building of allBuildings) {
+    if (!buildingsByPlanet.has(building.planet_id)) {
+      buildingsByPlanet.set(building.planet_id, []);
+    }
+    buildingsByPlanet.get(building.planet_id).push({
+      type: building.type,
+      hp: building.hp,
+      max_hp: building.max_hp
+    });
+  }
+
   // Filter to visible planets and add buildings
   const visiblePlanets = [];
 
   for (const planet of allPlanets) {
     const key = `${planet.x},${planet.y}`;
     if (visibleTiles.has(key)) {
-      // Get buildings for this planet (fortifications have max_hp 30, others 10)
-      const buildings = db.prepare(`
-        SELECT type, hp, CASE WHEN type = 'fortification' THEN 30 ELSE 10 END as max_hp
-        FROM buildings WHERE planet_id = ?
-      `).all(planet.id);
-
       visiblePlanets.push({
         id: planet.id,
         x: planet.x,
@@ -94,7 +110,7 @@ function getVisiblePlanets(gameId, playerId, visibleTiles) {
         is_homeworld: planet.is_homeworld,
         is_owned: planet.is_owned,
         name: planet.name,
-        buildings
+        buildings: buildingsByPlanet.get(planet.id) || []
       });
     }
   }

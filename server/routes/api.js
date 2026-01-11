@@ -33,10 +33,110 @@ router.get('/ai/names', (req, res) => {
 // All routes below require authentication
 router.use(requireAuth);
 
+// Helper function to handle observer state for non-players
+function handleObserverState(req, res, game) {
+  const gameId = game.id;
+
+  // Generate all tiles as visible for observers
+  const visibleTiles = new Set();
+  for (let x = 0; x < game.grid_size; x++) {
+    for (let y = 0; y < game.grid_size; y++) {
+      visibleTiles.add(`${x},${y}`);
+    }
+  }
+
+  // Get all planets with buildings
+  const planets = db.prepare(`
+    SELECT p.*,
+      (SELECT json_group_array(json_object('id', b.id, 'type', b.type, 'hp', b.hp, 'max_hp', CASE WHEN b.type = 'fortification' THEN 30 ELSE 10 END))
+       FROM buildings b WHERE b.planet_id = p.id) as buildings_json
+    FROM planets p WHERE p.game_id = ?
+  `).all(gameId).map(p => ({
+    ...p,
+    buildings: JSON.parse(p.buildings_json || '[]').filter(b => b.id !== null)
+  }));
+
+  // Get all mechs
+  const mechs = db.prepare('SELECT * FROM mechs WHERE game_id = ?').all(gameId);
+
+  // Get all players (exclude Pirates from display, but include for color lookups)
+  const players = db.prepare(`
+    SELECT gp.id, gp.player_number, gp.is_eliminated, gp.empire_name, gp.empire_color, gp.credits, gp.user_id,
+           gp.is_ai, gp.has_submitted_turn,
+           COALESCE(u.display_name, gp.empire_name) as display_name,
+           (SELECT COUNT(*) FROM planets WHERE game_id = gp.game_id AND owner_id = gp.id) as planet_count,
+           (SELECT COUNT(*) FROM mechs WHERE game_id = gp.game_id AND owner_id = gp.id) as mech_count,
+           (SELECT COALESCE(SUM(p.base_income + COALESCE(
+             (SELECT COUNT(*) FROM buildings WHERE planet_id = p.id AND type = 'mining'), 0
+           )), 0) FROM planets p WHERE p.game_id = gp.game_id AND p.owner_id = gp.id) as income,
+           CASE WHEN gp.empire_name = 'Pirates' THEN 1 ELSE 0 END as is_pirates
+    FROM game_players gp
+    LEFT JOIN users u ON gp.user_id = u.id
+    WHERE gp.game_id = ?
+    ORDER BY gp.player_number
+  `).all(gameId);
+
+  // Get combat logs visible to observers (all battles and captures, no player-specific events)
+  const playerOnlyEvents = ['turn_start', 'build_mech', 'build_building', 'income', 'maintenance', 'maintenance_failure', 'planet_lost', 'repair', 'defeat', 'victory', 'player_defeated', 'game_won'];
+
+  const rawCombatLogs = db.prepare(`
+    SELECT * FROM combat_logs
+    WHERE game_id = ? AND turn_number < ?
+    ORDER BY turn_number DESC, id ASC
+  `).all(gameId, game.current_turn);
+
+  const combatLogs = rawCombatLogs
+    .filter(log => !playerOnlyEvents.includes(log.log_type))
+    .map(log => ({
+      id: log.id,
+      turnNumber: log.turn_number,
+      x: log.x,
+      y: log.y,
+      logType: log.log_type,
+      participants: JSON.parse(log.participants || '[]'),
+      winnerId: log.winner_id,
+      attackerId: log.attacker_id,
+      defenderId: log.defender_id,
+      attackerCasualties: log.attacker_casualties,
+      defenderCasualties: log.defender_casualties,
+      isParticipant: false,
+      detailedLog: null
+    }));
+
+  res.json({
+    gameId: game.id,
+    name: game.name,
+    gridSize: game.grid_size,
+    currentTurn: game.current_turn,
+    status: game.status,
+    turnDeadline: game.turn_deadline,
+    hostId: game.host_id,
+    maxPlayers: game.max_players,
+    winnerId: null,
+    playerId: null,
+    playerNumber: null,
+    userId: req.user.id,
+    credits: 0,
+    income: 0,
+    incomeBreakdown: { planetIncome: 0, miningIncome: 0, maintenance: 0, net: 0 },
+    hasSubmittedTurn: false,
+    isEliminated: false,
+    isObserver: true,
+    isExternalObserver: true,
+    isVictor: false,
+    players,
+    planets,
+    mechs,
+    visibleTiles: Array.from(visibleTiles),
+    combatLogs
+  });
+}
+
 // Get game state for a player (with fog of war applied)
 router.get('/games/:id/state', (req, res) => {
   try {
     const gameId = parseInt(req.params.id);
+    const observeMode = req.query.observe === '1';
 
     // Get game details
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
@@ -49,7 +149,12 @@ router.get('/games/:id/state', (req, res) => {
       SELECT * FROM game_players WHERE game_id = ? AND user_id = ?
     `).get(gameId, req.user.id);
 
+    // Non-player observer mode: allow observing active games
     if (!player) {
+      if (observeMode && game.status === 'active') {
+        // Allow external observation of active games
+        return handleObserverState(req, res, game);
+      }
       return res.status(403).json({ error: 'You are not in this game' });
     }
 
@@ -218,14 +323,23 @@ const gameClients = new Map(); // gameId -> Set of response objects
 
 router.get('/games/:id/events', (req, res) => {
   const gameId = parseInt(req.params.id);
+  const observeMode = req.query.observe === '1';
 
-  // Verify player is in game
+  // Verify player is in game or observing
   const player = db.prepare(`
     SELECT * FROM game_players WHERE game_id = ? AND user_id = ?
   `).get(gameId, req.user.id);
 
-  if (!player) {
+  if (!player && !observeMode) {
     return res.status(403).json({ error: 'You are not in this game' });
+  }
+
+  // For observers, verify game exists and is active
+  if (!player && observeMode) {
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game || game.status !== 'active') {
+      return res.status(403).json({ error: 'Cannot observe this game' });
+    }
   }
 
   // Set up SSE
